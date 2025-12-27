@@ -7,7 +7,8 @@ import {
     Users, UserPlus, AlertTriangle, CheckCircle, Clock, Search,
     MapPin, Filter, MoreVertical, Star, Phone, Truck, ArrowRight, XCircle, Mail, Briefcase
 } from 'lucide-react';
-import FloatingBlobs from '@/components/FloatingBlobs'; \nimport { createClient } from '@/lib/supabase';
+import FloatingBlobs from '@/components/FloatingBlobs';
+import { createClient } from '@/lib/supabase';
 
 interface PendingWorker {
     id: string;
@@ -197,7 +198,7 @@ export default function WorkersManagementPage() {
                             : 'bg-white/80 text-gray-600 hover:bg-white backdrop-blur-sm shadow-sm'
                             }`}
                     >
-                        Active Workers ({MOCK_WORKERS.length})
+                        Active Workers ({activeWorkers.length})
                     </button>
                     <button
                         onClick={() => setSelectedTab('pending')}

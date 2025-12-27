@@ -127,10 +127,15 @@ returns trigger as $$
 begin
   -- Check metadata to decide role
   if new.raw_user_meta_data->>'role' = 'worker' then
-    -- It's a worker (usually manual registration via our form which handles DB insert? 
-    -- Actually, if we use auth.signUp for workers, we need to handle it here OR let the client do it.
-    -- Client side registration for workers usually inserts into 'workers' table directly.
-    -- So we might just want to create a basic profile if not exists, or ignore.
+    insert into public.workers (id, email, first_name, last_name, status)
+    values (
+      new.id,
+      new.email,
+      coalesce(new.raw_user_meta_data->>'given_name', split_part(new.raw_user_meta_data->>'full_name', ' ', 1), 'Worker'),
+      coalesce(new.raw_user_meta_data->>'family_name', split_part(new.raw_user_meta_data->>'full_name', ' ', 2), ''),
+      'pending_approval'
+    )
+    on conflict (id) do nothing;
     return new; 
   else
     -- Default to Citizen Profile

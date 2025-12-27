@@ -99,10 +99,13 @@ export function useCreateReport() {
 
             if (reportError) throw reportError;
 
+            // Cast report to proper type for TypeScript
+            const typedReport = report as Report;
+
             // Upload images if provided
-            if (images && images.length > 0 && report) {
+            if (images && images.length > 0 && typedReport) {
                 for (const image of images) {
-                    const fileName = `${report.id}/${Date.now()}-${image.name}`;
+                    const fileName = `${typedReport.id}/${Date.now()}-${image.name}`;
 
                     // Upload to storage
                     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -121,7 +124,7 @@ export function useCreateReport() {
 
                     // Insert image record
                     await supabase.from('report_images').insert({
-                        report_id: report.id,
+                        report_id: typedReport.id,
                         url: publicUrl,
                         storage_path: fileName,
                     });
@@ -129,7 +132,7 @@ export function useCreateReport() {
             }
 
             toast.success('Report submitted successfully!');
-            return report;
+            return typedReport;
         } catch (err: any) {
             toast.error(err.message || 'Failed to submit report');
             throw err;

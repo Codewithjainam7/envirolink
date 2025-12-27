@@ -68,7 +68,7 @@ export default function MapPage() {
         const matchesSearch =
             searchQuery === '' ||
             report.location.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            report.location.locality.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (report.location.locality?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
             WASTE_CATEGORIES[report.category].label.toLowerCase().includes(searchQuery.toLowerCase());
 
         return matchesFilter && matchesSearch;
@@ -281,7 +281,7 @@ export default function MapPage() {
                                                     </div>
                                                     <p className="text-sm text-gray-500 truncate flex items-center gap-1">
                                                         <MapPin size={12} />
-                                                        {report.location.locality}
+                                                        {report.location.locality || report.location.address}
                                                     </p>
                                                     <p className="text-xs text-gray-400 mt-0.5">
                                                         {formatDistanceToNow(new Date(report.createdAt), { addSuffix: true })}

@@ -47,7 +47,7 @@ function FloatingGreenBlobs() {
 
 const itemVariants = {
     hidden: { opacity: 0, y: 30, filter: 'blur(10px)' },
-    visible: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.6, ease: [0.165, 0.84, 0.44, 1] } },
+    visible: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.6, ease: [0.165, 0.84, 0.44, 1] as const } },
 };
 
 export default function LoginPage() {
@@ -67,35 +67,35 @@ export default function LoginPage() {
         try {
             const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
             if (authError) throw authError;
-            
+
             // Check worker approval status
             const { data: worker, error: workerError } = await supabase
                 .from('workers')
                 .select('status')
                 .eq('email', email)
                 .single();
-            
+
             if (workerError) {
                 // No worker record - might be new or not a worker
                 await supabase.auth.signOut();
                 throw new Error('No worker profile found. Please register first.');
             }
-            
+
             if (worker.status === 'pending_approval') {
                 await supabase.auth.signOut();
                 throw new Error('Your application is still pending approval. Please wait for admin approval.');
             }
-            
+
             if (worker.status === 'rejected') {
                 await supabase.auth.signOut();
                 throw new Error('Your application was not approved. Please contact support.');
             }
-            
+
             if (worker.status !== 'approved') {
                 await supabase.auth.signOut();
                 throw new Error('Your account status is invalid. Please contact support.');
             }
-            
+
             router.push('/');
         } catch (err: any) {
             setError(err.message);

@@ -116,7 +116,7 @@ export default function ReportsPage() {
         const matchesSearch =
             report.reportId.toLowerCase().includes(searchQuery.toLowerCase()) ||
             report.location.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            report.location.locality.toLowerCase().includes(searchQuery.toLowerCase());
+            (report.location.locality?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
         return matchesStatus && matchesSearch;
     });
 

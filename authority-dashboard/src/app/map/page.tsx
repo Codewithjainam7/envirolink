@@ -150,9 +150,9 @@ export default function MapViewPage() {
                                 </div>
                             ) : (
                                 filteredReports.map((report) => {
-                                    const CategoryIcon = WASTE_CATEGORIES[report.category]?.icon ? 
+                                    const CategoryIcon = WASTE_CATEGORIES[report.category]?.icon ?
                                         categories[report.category as keyof typeof categories]?.icon || Trash2 : Trash2;
-                                    
+
                                     return (
                                         <motion.div
                                             key={report.id}
@@ -224,9 +224,9 @@ export default function MapViewPage() {
 
                             {/* Image Header */}
                             <div className="h-48 bg-gray-200 relative">
-                                {selectedReport.imageUrl ? (
+                                {selectedReport.images?.[0]?.url ? (
                                     <img
-                                        src={selectedReport.imageUrl}
+                                        src={selectedReport.images[0].url}
                                         alt="Report"
                                         className="w-full h-full object-cover"
                                     />

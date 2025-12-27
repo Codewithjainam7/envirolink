@@ -7,17 +7,19 @@ export interface Location {
     latitude: number;
     longitude: number;
     address: string;
-    locality: string;
-    city: string;
+    locality?: string;
+    city?: string;
 }
 
 export interface Report {
     id: string;
     reportId: string;
     location: Location;
+    images?: { id: string; url: string; thumbnailUrl?: string }[];
     category: WasteCategory;
     severity: Severity;
     status: ReportStatus;
+    description?: string;
     reporterName?: string;
     isAnonymous: boolean;
     assignedTo?: {

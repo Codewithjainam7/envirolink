@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const GEMINI_API_KEY = 'AIzaSyDfGlgED6FH7Sj3W_LjzUnWth-yn4o9DQI';
-
 export async function POST(request: NextRequest) {
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+    if (!GEMINI_API_KEY) {
+        console.error('GEMINI_API_KEY not configured');
+        return NextResponse.json({
+            error: 'API not configured',
+            isWasteRelated: false,
+            rejectionReason: 'Image analysis not available'
+        }, { status: 500 });
+    }
+
     try {
         const body = await request.json();
         const { imageBase64 } = body;
@@ -43,7 +52,7 @@ or
         };
 
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

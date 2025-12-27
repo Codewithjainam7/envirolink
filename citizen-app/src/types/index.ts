@@ -16,8 +16,8 @@ export interface Location {
   latitude: number;
   longitude: number;
   address: string;
-  locality: string;
-  city: string;
+  locality?: string;
+  city?: string;
 }
 
 export interface ReportImage {

@@ -41,6 +41,15 @@ const Card = forwardRef<HTMLDivElement, CardProps>(
             ? 'hover:shadow-md hover:-translate-y-0.5 cursor-pointer'
             : '';
 
+        const {
+            onDrag,
+            onDragStart,
+            onDragEnd,
+            onDragOver,
+            onAnimationStart,
+            ...divProps
+        } = props;
+
         return (
             <motion.div
                 ref={ref}
@@ -54,7 +63,7 @@ const Card = forwardRef<HTMLDivElement, CardProps>(
                     hoverStyles,
                     className
                 )}
-                {...props}
+                {...divProps}
             >
                 {children}
             </motion.div>

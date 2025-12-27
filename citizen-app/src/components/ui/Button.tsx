@@ -44,6 +44,15 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
             lg: 'px-8 py-4 text-lg rounded-3xl',
         };
 
+        const {
+            onDrag,
+            onDragStart,
+            onDragEnd,
+            onDragOver,
+            onAnimationStart,
+            ...buttonProps
+        } = props;
+
         return (
             <motion.button
                 ref={ref}
@@ -56,7 +65,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
                     className
                 )}
                 disabled={disabled || isLoading}
-                {...props}
+                {...buttonProps}
             >
                 {isLoading ? (
                     <svg

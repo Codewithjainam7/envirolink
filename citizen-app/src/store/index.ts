@@ -1,134 +1,6 @@
 import { create } from 'zustand';
 import { Report, User, CityStats, WasteCategory, Location } from '@/types';
-
-// Mock data for reports
-const mockReports: Report[] = [
-    {
-        id: '1',
-        reportId: 'RPT-2024-000001',
-        location: {
-            latitude: 19.076,
-            longitude: 72.8777,
-            address: '123 Marine Drive',
-            locality: 'Churchgate',
-            city: 'Mumbai',
-        },
-        images: [],
-        category: 'illegal_dumping',
-        severity: 'high',
-        estimatedVolume: 'large',
-        description: 'Large pile of construction waste dumped illegally',
-        isAnonymous: false,
-        status: 'in_progress',
-        statusHistory: [
-            { status: 'submitted', timestamp: '2024-12-24T10:30:00Z' },
-            { status: 'under_review', timestamp: '2024-12-24T11:00:00Z' },
-            { status: 'assigned', timestamp: '2024-12-24T14:00:00Z', notes: 'Assigned to SWM Team-A' },
-            { status: 'in_progress', timestamp: '2024-12-25T09:00:00Z' },
-        ],
-        assignedTo: {
-            departmentId: 'dept-1',
-            departmentName: 'Solid Waste Management',
-            workerId: 'worker-1',
-            workerName: 'Rajesh Kumar',
-            assignedAt: '2024-12-24T14:00:00Z',
-        },
-        createdAt: '2024-12-24T10:30:00Z',
-        updatedAt: '2024-12-25T09:00:00Z',
-    },
-    {
-        id: '2',
-        reportId: 'RPT-2024-000002',
-        location: {
-            latitude: 19.082,
-            longitude: 72.881,
-            address: '45 Linking Road',
-            locality: 'Bandra',
-            city: 'Mumbai',
-        },
-        images: [],
-        category: 'overflowing_bin',
-        severity: 'medium',
-        estimatedVolume: 'medium',
-        description: 'Community bin overflowing for 2 days',
-        isAnonymous: true,
-        status: 'submitted',
-        statusHistory: [
-            { status: 'submitted', timestamp: '2024-12-25T08:00:00Z' },
-        ],
-        createdAt: '2024-12-25T08:00:00Z',
-        updatedAt: '2024-12-25T08:00:00Z',
-    },
-    {
-        id: '3',
-        reportId: 'RPT-2024-000003',
-        location: {
-            latitude: 19.065,
-            longitude: 72.865,
-            address: '78 Colaba Causeway',
-            locality: 'Colaba',
-            city: 'Mumbai',
-        },
-        images: [],
-        category: 'littering',
-        severity: 'low',
-        estimatedVolume: 'small',
-        isAnonymous: false,
-        status: 'resolved',
-        statusHistory: [
-            { status: 'submitted', timestamp: '2024-12-20T15:00:00Z' },
-            { status: 'assigned', timestamp: '2024-12-20T16:00:00Z' },
-            { status: 'in_progress', timestamp: '2024-12-21T09:00:00Z' },
-            { status: 'resolved', timestamp: '2024-12-21T11:00:00Z' },
-        ],
-        resolution: {
-            beforeImages: [],
-            afterImages: [],
-            notes: 'Area cleaned successfully',
-            completedAt: '2024-12-21T11:00:00Z',
-            completedBy: 'Amit Shah',
-        },
-        createdAt: '2024-12-20T15:00:00Z',
-        updatedAt: '2024-12-21T11:00:00Z',
-    },
-];
-
-const mockUser: User = {
-    id: 'user-1',
-    email: 'rahul@example.com',
-    phone: '+91-9876543210',
-    profile: {
-        firstName: 'Rahul',
-        lastName: 'Sharma',
-        avatar: '/images/avatar.jpg',
-        preferredLanguage: 'en',
-    },
-    role: 'citizen',
-    engagement: {
-        totalReports: 15,
-        resolvedReports: 12,
-        badges: ['first_report', 'community_hero', 'streak_7'],
-        points: 250,
-        rank: 'Silver Reporter',
-    },
-    preferences: {
-        notifications: { push: true, email: true, sms: false },
-        darkMode: false,
-        locationSharing: true,
-    },
-    isVerified: true,
-    createdAt: '2024-01-15T10:00:00Z',
-};
-
-const mockStats: CityStats = {
-    totalReports: 12345,
-    resolvedReports: 11892,
-    pendingReports: 321,
-    inProgressReports: 132,
-    resolutionRate: 96.3,
-    averageResolutionHours: 18,
-    cleanlinessScore: 85,
-};
+import { getSupabase } from '@/lib/supabase';
 
 // App Store
 interface AppState {
@@ -168,6 +40,7 @@ interface AppState {
     submitReport: () => Promise<void>;
     fetchReports: () => Promise<void>;
     fetchUserReports: () => Promise<void>;
+    initializeAuth: () => Promise<void>;
 }
 
 const initialNewReport = {
@@ -178,47 +51,24 @@ const initialNewReport = {
     isAnonymous: false,
 };
 
-// LocalStorage helpers for persistence
-const STORAGE_KEY = 'envirolink_reports';
-
-const saveToLocalStorage = (reports: Report[]) => {
-    if (typeof window !== 'undefined') {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
-        } catch (e) {
-            console.error('Failed to save reports to localStorage:', e);
-        }
-    }
-};
-
-const loadFromLocalStorage = (): Report[] | null => {
-    if (typeof window !== 'undefined') {
-        try {
-            const data = localStorage.getItem(STORAGE_KEY);
-            if (data) {
-                return JSON.parse(data);
-            }
-        } catch (e) {
-            console.error('Failed to load reports from localStorage:', e);
-        }
-    }
-    return null;
-};
-
-// Get initial reports - from localStorage if available, otherwise mock data
-const getInitialReports = (): Report[] => {
-    const stored = loadFromLocalStorage();
-    return stored && stored.length > 0 ? stored : mockReports;
+const initialStats: CityStats = {
+    totalReports: 0,
+    resolvedReports: 0,
+    pendingReports: 0,
+    inProgressReports: 0,
+    resolutionRate: 0,
+    averageResolutionHours: 0,
+    cleanlinessScore: 0,
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
-    // Initial State
-    user: mockUser,
-    isAuthenticated: true,
-    reports: typeof window !== 'undefined' ? getInitialReports() : mockReports,
-    userReports: typeof window !== 'undefined' ? getInitialReports().filter(r => !r.isAnonymous) : mockReports.filter(r => !r.isAnonymous),
+    // Initial State - NO MOCK DATA
+    user: null,
+    isAuthenticated: false,
+    reports: [],
+    userReports: [],
     selectedReport: null,
-    cityStats: mockStats,
+    cityStats: initialStats,
     isLoading: false,
     isReportSheetOpen: false,
     newReport: initialNewReport,
@@ -226,10 +76,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Actions
     setUser: (user) => set({ user, isAuthenticated: !!user }),
 
-    setReports: (reports) => {
-        saveToLocalStorage(reports);
-        set({ reports });
-    },
+    setReports: (reports) => set({ reports }),
 
     setSelectedReport: (report) => set({ selectedReport: report }),
 
@@ -243,77 +90,251 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     resetNewReport: () => set({ newReport: initialNewReport }),
 
-    submitReport: async () => {
-        const { newReport, reports, user } = get();
-        set({ isLoading: true });
-
-        const newReportData: Report = {
-            id: `${Date.now()}`,
-            reportId: `RPT-2025-${String(reports.length + 1).padStart(6, '0')}`,
-            location: newReport.location!,
-            images: newReport.images.map((url, i) => ({
-                id: `img-${Date.now()}-${i}`,
-                url,
-                thumbnailUrl: url,
-                uploadedAt: new Date().toISOString(),
-            })),
-            category: newReport.category!,
-            severity: 'medium',
-            estimatedVolume: 'medium',
-            description: newReport.description,
-            reporterId: newReport.isAnonymous ? undefined : user?.id,
-            isAnonymous: newReport.isAnonymous,
-            status: 'submitted',
-            statusHistory: [
-                { status: 'submitted', timestamp: new Date().toISOString() },
-            ],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-
-        const updatedReports = [newReportData, ...reports];
-        saveToLocalStorage(updatedReports);
-
-        // Sync to shared file via API for admin dashboard
+    // Initialize auth from Supabase session
+    initializeAuth: async () => {
         try {
-            await fetch('/api/reports', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    location: newReportData.location,
-                    category: newReportData.category,
-                    severity: newReportData.severity,
-                    description: newReportData.description,
-                    isAnonymous: newReportData.isAnonymous,
-                    reporterName: newReport.isAnonymous ? undefined : `${user?.profile?.firstName} ${user?.profile?.lastName}`,
-                }),
-            });
-        } catch (e) {
-            console.log('Failed to sync with shared storage:', e);
-        }
+            const supabase = getSupabase();
+            const { data: { session } } = await supabase.auth.getSession();
 
-        set({
-            reports: updatedReports,
-            userReports: newReport.isAnonymous ? get().userReports : [newReportData, ...get().userReports],
-            newReport: initialNewReport,
-            isReportSheetOpen: false,
-            isLoading: false,
-        });
+            if (session?.user) {
+                // Fetch user profile from profiles table
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', session.user.id)
+                    .single();
+
+                const userData: User = {
+                    id: session.user.id,
+                    email: session.user.email || '',
+                    phone: session.user.phone || '',
+                    profile: {
+                        firstName: profile?.first_name || profile?.full_name?.split(' ')[0] || 'User',
+                        lastName: profile?.last_name || profile?.full_name?.split(' ').slice(1).join(' ') || '',
+                        avatar: profile?.avatar_url || session.user.user_metadata?.avatar_url || '',
+                        preferredLanguage: 'en',
+                    },
+                    role: 'citizen',
+                    engagement: {
+                        totalReports: profile?.reports_submitted || 0,
+                        resolvedReports: profile?.reports_resolved || 0,
+                        badges: [],
+                        points: profile?.points || 0,
+                        rank: 'New Reporter',
+                    },
+                    preferences: {
+                        notifications: { push: true, email: true, sms: false },
+                        darkMode: false,
+                        locationSharing: true,
+                    },
+                    isVerified: true,
+                    createdAt: session.user.created_at || new Date().toISOString(),
+                };
+
+                set({ user: userData, isAuthenticated: true });
+            }
+        } catch (error) {
+            console.error('Failed to initialize auth:', error);
+        }
     },
 
+    // Submit report to Supabase
+    submitReport: async () => {
+        const { newReport, user } = get();
+        set({ isLoading: true });
+
+        try {
+            const supabase = getSupabase();
+
+            // Insert report to Supabase
+            const { data: reportData, error: reportError } = await supabase
+                .from('reports')
+                .insert({
+                    user_id: newReport.isAnonymous ? null : user?.id,
+                    category: newReport.category,
+                    severity: 'medium',
+                    status: 'submitted',
+                    description: newReport.description,
+                    latitude: newReport.location?.latitude,
+                    longitude: newReport.location?.longitude,
+                    address: newReport.location?.address || 'Unknown location',
+                    locality: newReport.location?.locality,
+                    city: newReport.location?.city || 'Mumbai',
+                    is_anonymous: newReport.isAnonymous,
+                    sla_hours: 24,
+                    sla_due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                })
+                .select()
+                .single();
+
+            if (reportError) throw reportError;
+
+            // Upload images if any
+            if (newReport.images.length > 0 && reportData) {
+                for (let i = 0; i < newReport.images.length; i++) {
+                    const imageUrl = newReport.images[i];
+
+                    // If it's a base64 image, upload to Supabase storage
+                    if (imageUrl.startsWith('data:')) {
+                        const base64Data = imageUrl.split(',')[1];
+                        const fileName = `${reportData.id}/${Date.now()}-${i}.jpg`;
+
+                        const { data: uploadData, error: uploadError } = await supabase.storage
+                            .from('report-images')
+                            .upload(fileName, Buffer.from(base64Data, 'base64'), {
+                                contentType: 'image/jpeg'
+                            });
+
+                        if (!uploadError && uploadData) {
+                            const { data: { publicUrl } } = supabase.storage
+                                .from('report-images')
+                                .getPublicUrl(fileName);
+
+                            await supabase.from('report_images').insert({
+                                report_id: reportData.id,
+                                url: publicUrl,
+                                storage_path: fileName,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Update user stats if logged in
+            if (user && !newReport.isAnonymous) {
+                await supabase
+                    .from('profiles')
+                    .update({
+                        reports_submitted: (user.engagement?.totalReports || 0) + 1,
+                        points: (user.engagement?.points || 0) + 10
+                    })
+                    .eq('id', user.id);
+            }
+
+            // Refresh reports
+            await get().fetchReports();
+
+            set({
+                newReport: initialNewReport,
+                isReportSheetOpen: false,
+                isLoading: false,
+            });
+
+        } catch (error) {
+            console.error('Failed to submit report:', error);
+            set({ isLoading: false });
+            throw error;
+        }
+    },
+
+    // Fetch all reports from Supabase
     fetchReports: async () => {
         set({ isLoading: true });
-        // Simulate API call
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        set({ reports: mockReports, isLoading: false });
+        try {
+            const supabase = getSupabase();
+            const { data: reportsData, error } = await supabase
+                .from('reports')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            const { data: imagesData } = await supabase.from('report_images').select('*');
+
+            const mappedReports: Report[] = (reportsData || []).map((r: any) => ({
+                id: r.id,
+                reportId: r.report_id,
+                location: {
+                    latitude: r.latitude,
+                    longitude: r.longitude,
+                    address: r.address,
+                    locality: r.locality,
+                    city: r.city,
+                },
+                images: imagesData?.filter((img: any) => img.report_id === r.id).map((img: any) => ({
+                    id: img.id,
+                    url: img.url,
+                    thumbnailUrl: img.url,
+                    uploadedAt: img.created_at,
+                })) || [],
+                category: r.category,
+                severity: r.severity,
+                estimatedVolume: 'medium',
+                description: r.description,
+                isAnonymous: r.is_anonymous,
+                status: r.status,
+                statusHistory: [{ status: r.status, timestamp: r.created_at }],
+                createdAt: r.created_at,
+                updatedAt: r.updated_at,
+            }));
+
+            // Calculate stats
+            const total = mappedReports.length;
+            const resolved = mappedReports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
+            const pending = mappedReports.filter(r => r.status === 'submitted').length;
+            const inProgress = mappedReports.filter(r => ['under_review', 'assigned', 'in_progress'].includes(r.status)).length;
+
+            set({
+                reports: mappedReports,
+                cityStats: {
+                    totalReports: total,
+                    resolvedReports: resolved,
+                    pendingReports: pending,
+                    inProgressReports: inProgress,
+                    resolutionRate: total > 0 ? Math.round((resolved / total) * 100 * 10) / 10 : 0,
+                    averageResolutionHours: 18,
+                    cleanlinessScore: total > 0 ? Math.round(((resolved + (inProgress * 0.5)) / total) * 100) : 0,
+                },
+                isLoading: false
+            });
+        } catch (error) {
+            console.error('Failed to fetch reports:', error);
+            set({ isLoading: false });
+        }
     },
 
+    // Fetch user's reports
     fetchUserReports: async () => {
+        const { user } = get();
+        if (!user) return;
+
         set({ isLoading: true });
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        set({
-            userReports: mockReports.filter(r => !r.isAnonymous),
-            isLoading: false
-        });
+        try {
+            const supabase = getSupabase();
+            const { data: reportsData, error } = await supabase
+                .from('reports')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            const mappedReports: Report[] = (reportsData || []).map((r: any) => ({
+                id: r.id,
+                reportId: r.report_id,
+                location: {
+                    latitude: r.latitude,
+                    longitude: r.longitude,
+                    address: r.address,
+                    locality: r.locality,
+                    city: r.city,
+                },
+                images: [],
+                category: r.category,
+                severity: r.severity,
+                estimatedVolume: 'medium',
+                description: r.description,
+                isAnonymous: r.is_anonymous,
+                status: r.status,
+                statusHistory: [{ status: r.status, timestamp: r.created_at }],
+                createdAt: r.created_at,
+                updatedAt: r.updated_at,
+            }));
+
+            set({ userReports: mappedReports, isLoading: false });
+        } catch (error) {
+            console.error('Failed to fetch user reports:', error);
+            set({ isLoading: false });
+        }
     },
 }));

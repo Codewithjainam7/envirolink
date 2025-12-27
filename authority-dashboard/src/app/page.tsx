@@ -15,6 +15,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { Report, DashboardStats, WASTE_CATEGORIES, STATUS_CONFIG, SEVERITY_CONFIG } from '@/types';
 import dynamic from 'next/dynamic';
+import { createClient } from '@/lib/supabase';
 import FloatingBlobs from '@/components/FloatingBlobs';
 
 // Dynamic import for map
@@ -124,29 +125,66 @@ const vehicles = [
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [reports, setReports] = useState<Report[]>(mockReports);
-  const [dashboardStats, setDashboardStats] = useState(mockStats);
-  const [isLoading, setIsLoading] = useState(false);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
+    totalReports: 0, newReports: 0, inProgress: 0, resolved: 0,
+    slaBreach: 0, resolutionRate: 0, avgResolutionHours: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch reports from citizen-app API
+  // Fetch reports from Supabase
   const fetchReports = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:3000/api/reports');
-      if (response.ok) {
-        const data = await response.json();
-        setReports(data.reports);
-        setDashboardStats({
-          ...mockStats,
-          newReports: data.stats.newReports,
-          inProgress: data.stats.inProgress,
-          resolved: data.stats.resolved,
-          slaBreach: data.stats.slaBreach,
-          totalReports: data.stats.totalReports,
-        });
-      }
+      const supabase = createClient();
+      const { data: reportsData, error } = await supabase
+        .from('reports')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const { data: imagesData } = await supabase.from('report_images').select('*');
+
+      const mappedReports: Report[] = (reportsData || []).map((r: any) => ({
+        id: r.id,
+        reportId: r.report_id,
+        location: { latitude: r.latitude, longitude: r.longitude, address: r.address, locality: r.locality, city: r.city },
+        category: r.category,
+        severity: r.severity,
+        status: r.status,
+        description: r.description,
+        reporterName: 'Anonymous',
+        isAnonymous: r.is_anonymous,
+        assignedTo: r.assigned_department_id ? { departmentId: r.assigned_department_id, departmentName: r.assigned_department_name, workerId: r.assigned_worker_id, workerName: r.assigned_worker_name } : undefined,
+        slaHours: r.sla_hours,
+        slaDueAt: r.sla_due_at,
+        isSlaBreach: r.is_sla_breach,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        images: imagesData?.filter((img: any) => img.report_id === r.id).map((img: any) => ({ id: img.id, url: img.url })) || []
+      }));
+
+      setReports(mappedReports);
+
+      // Calculate real stats
+      const total = mappedReports.length;
+      const newCount = mappedReports.filter(r => r.status === 'submitted').length;
+      const inProgressCount = mappedReports.filter(r => ['under_review', 'assigned', 'in_progress'].includes(r.status)).length;
+      const resolvedCount = mappedReports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
+      const breachCount = mappedReports.filter(r => r.isSlaBreach).length;
+
+      setDashboardStats({
+        totalReports: total,
+        newReports: newCount,
+        inProgress: inProgressCount,
+        resolved: resolvedCount,
+        slaBreach: breachCount,
+        resolutionRate: total > 0 ? Math.round((resolvedCount / total) * 100 * 10) / 10 : 0,
+        avgResolutionHours: 18,
+      });
     } catch (error) {
-      console.log('Using mock data - citizen-app API not available');
+      console.error('Failed to fetch reports:', error);
     }
     setIsLoading(false);
   };

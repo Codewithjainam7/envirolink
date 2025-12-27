@@ -7,17 +7,7 @@ import {
     Users, UserPlus, AlertTriangle, CheckCircle, Clock, Search,
     MapPin, Filter, MoreVertical, Star, Phone, Truck, ArrowRight, XCircle, Mail, Briefcase
 } from 'lucide-react';
-import FloatingBlobs from '@/components/FloatingBlobs';
-import { createClient } from '@/lib/supabase';
-
-// Mock workers data (for active workers - will be replaced with real data later)
-const MOCK_WORKERS = [
-    { id: 'WK-001', name: 'Suresh Patil', zone: 'Zone 3', status: 'active', rating: 4.8, tasksToday: 5, tasksCompleted: 3, phone: '+91 98765 43210', location: { lat: 19.12, lng: 72.84 } },
-    { id: 'WK-002', name: 'Ramesh Kumar', zone: 'Zone 1', status: 'active', rating: 4.5, tasksToday: 4, tasksCompleted: 4, phone: '+91 98765 43211', location: { lat: 19.08, lng: 72.88 } },
-    { id: 'WK-003', name: 'Anil Sharma', zone: 'Zone 2', status: 'busy', rating: 4.9, tasksToday: 6, tasksCompleted: 5, phone: '+91 98765 43212', location: { lat: 19.10, lng: 72.82 } },
-    { id: 'WK-004', name: 'Vijay Singh', zone: 'Zone 3', status: 'offline', rating: 4.2, tasksToday: 0, tasksCompleted: 0, phone: '+91 98765 43213', location: null },
-    { id: 'WK-005', name: 'Prakash Yadav', zone: 'Zone 4', status: 'active', rating: 4.7, tasksToday: 3, tasksCompleted: 2, phone: '+91 98765 43214', location: { lat: 19.14, lng: 72.90 } },
-];
+import FloatingBlobs from '@/components/FloatingBlobs'; \nimport { createClient } from '@/lib/supabase';
 
 interface PendingWorker {
     id: string;
@@ -31,17 +21,47 @@ interface PendingWorker {
     status: string;
 }
 
+interface ActiveWorker {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    zone: string;
+    status: string;
+}
+
 export default function WorkersManagementPage() {
     const [selectedTab, setSelectedTab] = useState<'active' | 'pending'>('active');
     const [searchQuery, setSearchQuery] = useState('');
     const [pendingWorkers, setPendingWorkers] = useState<PendingWorker[]>([]);
+    const [activeWorkers, setActiveWorkers] = useState<ActiveWorker[]>([]);
     const [loadingPending, setLoadingPending] = useState(true);
+    const [loadingActive, setLoadingActive] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const supabase = createClient();
 
     useEffect(() => {
         fetchPendingWorkers();
+        fetchActiveWorkers();
     }, []);
+
+    const fetchActiveWorkers = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('workers')
+                .select('*')
+                .in('status', ['approved', 'active'])
+                .order('first_name', { ascending: true });
+
+            if (error) throw error;
+            setActiveWorkers(data || []);
+        } catch (err) {
+            console.error('Error fetching active workers:', err);
+        } finally {
+            setLoadingActive(false);
+        }
+    };
 
     const fetchPendingWorkers = async () => {
         try {
@@ -70,6 +90,7 @@ export default function WorkersManagementPage() {
 
             if (error) throw error;
             setPendingWorkers(pendingWorkers.filter(w => w.id !== workerId));
+            fetchActiveWorkers(); // Refresh active list
         } catch (err) {
             console.error('Error approving worker:', err);
             alert('Failed to approve worker');
@@ -110,9 +131,9 @@ export default function WorkersManagementPage() {
         return `${days} day${days > 1 ? 's' : ''} ago`;
     };
 
-    const filteredWorkers = MOCK_WORKERS.filter(w =>
-        w.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        w.id.toLowerCase().includes(searchQuery.toLowerCase())
+    const filteredWorkers = activeWorkers.filter(w =>
+        `${w.first_name} ${w.last_name}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        w.email.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     return (
@@ -139,9 +160,9 @@ export default function WorkersManagementPage() {
                 {/* Stats Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                     {[
-                        { label: 'Total Workers', value: MOCK_WORKERS.length, icon: Users, color: '#10b981' },
-                        { label: 'Active Now', value: MOCK_WORKERS.filter(w => w.status === 'active').length, icon: CheckCircle, color: '#059669' },
-                        { label: 'Busy', value: MOCK_WORKERS.filter(w => w.status === 'busy').length, icon: Clock, color: '#f59e0b' },
+                        { label: 'Total Workers', value: activeWorkers.length, icon: Users, color: '#10b981' },
+                        { label: 'Active/Approved', value: activeWorkers.filter(w => w.status === 'active' || w.status === 'approved').length, icon: CheckCircle, color: '#059669' },
+                        { label: 'Inactive', value: activeWorkers.filter(w => w.status === 'inactive').length, icon: Clock, color: '#f59e0b' },
                         { label: 'Pending Apps', value: pendingWorkers.length, icon: UserPlus, color: '#8b5cf6' },
                     ].map((stat, i) => (
                         <motion.div
@@ -230,11 +251,11 @@ export default function WorkersManagementPage() {
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center font-bold text-emerald-700 shadow-sm border border-emerald-200">
-                                                    {worker.name.split(' ').map(n => n[0]).join('')}
+                                                    {worker.first_name[0]}{worker.last_name?.[0] || ''}
                                                 </div>
                                                 <div>
-                                                    <p className="font-bold text-gray-900">{worker.name}</p>
-                                                    <p className="text-xs font-medium text-gray-500">{worker.id}</p>
+                                                    <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
+                                                    <p className="text-xs font-medium text-gray-500">{worker.email}</p>
                                                 </div>
                                             </div>
                                         </td>
@@ -256,16 +277,13 @@ export default function WorkersManagementPage() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex items-center gap-1 bg-amber-50 w-fit px-2 py-1 rounded-lg border border-amber-100">
-                                                <Star size={14} className="text-amber-400" fill="#fbbf24" />
-                                                <span className="font-bold text-amber-700 text-sm">{worker.rating}</span>
+                                            <div className="flex items-center gap-1 bg-emerald-50 w-fit px-2 py-1 rounded-lg border border-emerald-100">
+                                                <Star size={14} className="text-emerald-400" fill="#10b981" />
+                                                <span className="font-bold text-emerald-700 text-sm">New</span>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="w-full max-w-[100px] bg-gray-200 rounded-full h-2.5 mb-1">
-                                                <div className="bg-emerald-500 h-2.5 rounded-full" style={{ width: `${(worker.tasksCompleted / worker.tasksToday) * 100}%` }}></div>
-                                            </div>
-                                            <span className="text-xs font-semibold text-gray-600">{worker.tasksCompleted}/{worker.tasksToday} tasks</span>
+                                            <span className="text-sm font-medium text-gray-600">{worker.phone || 'N/A'}</span>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-2">

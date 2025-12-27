@@ -58,7 +58,7 @@ export default function Navbar() {
         // Set the googletrans cookie which Google Translate uses
         document.cookie = `googtrans=/en/${langCode}; path=/`;
         document.cookie = `googtrans=/en/${langCode}; path=/; domain=${window.location.hostname}`;
-        
+
         // Try to use the select dropdown if available
         const select = document.querySelector('.goog-te-combo') as HTMLSelectElement;
         if (select) {
@@ -194,10 +194,27 @@ export default function Navbar() {
                                 </div>
                             </Link>
                         ) : (
-                            <button className="flex items-center gap-2 px-4 py-2 text-gray-700 font-medium text-sm hover:bg-gray-100 rounded-xl transition-colors">
-                                <LogIn size={18} />
-                                <span className="hidden sm:inline">Sign In</span>
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <Link href="/login">
+                                    <motion.button
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        className="flex items-center gap-2 px-4 py-2 text-gray-700 font-medium text-sm hover:bg-gray-100 rounded-xl transition-colors"
+                                    >
+                                        <LogIn size={18} />
+                                        <span className="hidden sm:inline">Sign In</span>
+                                    </motion.button>
+                                </Link>
+                                <Link href="/register">
+                                    <motion.button
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        className="hidden sm:flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white font-semibold text-sm rounded-xl"
+                                    >
+                                        Register
+                                    </motion.button>
+                                </Link>
+                            </div>
                         )}
 
                         {/* Mobile Menu Button */}

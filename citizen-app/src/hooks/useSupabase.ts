@@ -158,7 +158,7 @@ export function useUpdateReport() {
         try {
             const { data, error } = await supabase
                 .from('reports')
-                .update({ ...updates, updated_at: new Date().toISOString() })
+                .update({ ...updates, updated_at: new Date().toISOString() } as any)
                 .eq('id', reportId)
                 .select()
                 .single();

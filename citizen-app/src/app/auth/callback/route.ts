@@ -1,12 +1,21 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
     const { searchParams, origin } = new URL(request.url)
     const code = searchParams.get('code')
-    // if "next" is in param, use it as the redirect URL
+    const error_description = searchParams.get('error_description')
     const next = searchParams.get('next') ?? '/home'
+
+    // Log for debugging
+    console.log('Auth callback received:', { code: !!code, error_description, origin })
+
+    // If there's an OAuth error from Supabase
+    if (error_description) {
+        console.error('OAuth error:', error_description)
+        return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error_description)}`)
+    }
 
     if (code) {
         const cookieStore = await cookies()
@@ -23,21 +32,26 @@ export async function GET(request: Request) {
                             cookiesToSet.forEach(({ name, value, options }) =>
                                 cookieStore.set(name, value, options)
                             )
-                        } catch {
-                            // The `setAll` method was called from a Server Component.
-                            // This can be ignored if you have middleware refreshing
-                            // user sessions.
+                        } catch (e) {
+                            console.error('Cookie set error:', e)
                         }
                     },
                 },
             }
         )
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (!error) {
-            return NextResponse.redirect(`${origin}${next}`)
+
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+
+        if (error) {
+            console.error('Session exchange error:', error.message)
+            return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`)
         }
+
+        console.log('Session created successfully for:', data.user?.email)
+        return NextResponse.redirect(`${origin}${next}`)
     }
 
-    // return the user to an error page with instructions
-    return NextResponse.redirect(`${origin}/login?error=auth-code-error`)
+    console.error('No code received in callback')
+    return NextResponse.redirect(`${origin}/login?error=no-code-received`)
 }
+

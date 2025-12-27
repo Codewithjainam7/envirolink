@@ -97,40 +97,41 @@ export const useAppStore = create<AppState>((set, get) => ({
             const { data: { session } } = await supabase.auth.getSession();
 
             if (session?.user) {
-                // Fetch user profile from profiles table
-                const { data } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .single();
+                // Get user metadata from Google OAuth (always available)
+                const meta = session.user.user_metadata || {};
+                const fullName = meta.full_name || meta.name || session.user.email?.split('@')[0] || 'User';
+                const nameParts = fullName.split(' ');
 
-                // Type the profile data
-                const profile = data as {
-                    first_name?: string;
-                    last_name?: string;
-                    full_name?: string;
-                    avatar_url?: string;
-                    reports_submitted?: number;
-                    reports_resolved?: number;
-                    points?: number;
-                } | null;
+                // Try to get additional profile data from profiles table (optional - may not exist)
+                let profileData: any = null;
+                try {
+                    const { data } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', session.user.id)
+                        .single();
+                    profileData = data;
+                } catch (e) {
+                    // Profiles table may not exist yet - that's okay
+                    console.log('Profiles table not available, using OAuth data');
+                }
 
                 const userData: User = {
                     id: session.user.id,
                     email: session.user.email || '',
                     phone: session.user.phone || '',
                     profile: {
-                        firstName: profile?.first_name || profile?.full_name?.split(' ')[0] || 'User',
-                        lastName: profile?.last_name || profile?.full_name?.split(' ').slice(1).join(' ') || '',
-                        avatar: profile?.avatar_url || session.user.user_metadata?.avatar_url || '',
+                        firstName: profileData?.first_name || nameParts[0] || 'User',
+                        lastName: profileData?.last_name || nameParts.slice(1).join(' ') || '',
+                        avatar: profileData?.avatar_url || meta.avatar_url || meta.picture || '',
                         preferredLanguage: 'en',
                     },
                     role: 'citizen',
                     engagement: {
-                        totalReports: profile?.reports_submitted || 0,
-                        resolvedReports: profile?.reports_resolved || 0,
+                        totalReports: profileData?.reports_submitted || 0,
+                        resolvedReports: profileData?.reports_resolved || 0,
                         badges: [],
-                        points: profile?.points || 0,
+                        points: profileData?.points || 0,
                         rank: 'New Reporter',
                     },
                     preferences: {

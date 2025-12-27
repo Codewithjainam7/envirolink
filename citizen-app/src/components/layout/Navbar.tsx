@@ -23,7 +23,12 @@ export default function Navbar() {
     const pathname = usePathname();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [showTranslate, setShowTranslate] = useState(false);
-    const { user } = useAppStore();
+    const { user, isAuthenticated, initializeAuth } = useAppStore();
+
+    // Initialize auth on mount
+    useEffect(() => {
+        initializeAuth();
+    }, [initializeAuth]);
 
     const languages = [
         { code: 'en', name: 'English' },
@@ -182,15 +187,23 @@ export default function Navbar() {
                                 <motion.div
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
-                                    className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white font-bold cursor-pointer"
+                                    className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white font-bold cursor-pointer"
                                 >
-                                    {user.profile.firstName[0]}
+                                    {user.profile?.avatar ? (
+                                        <img
+                                            src={user.profile.avatar}
+                                            alt={user.profile?.firstName || 'User'}
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        <span>{(user.profile?.firstName?.[0] || user.email?.[0] || 'U').toUpperCase()}</span>
+                                    )}
                                 </motion.div>
                                 <div className="hidden lg:block">
                                     <p className="text-sm font-semibold text-gray-900">
-                                        {user.profile.firstName}
+                                        {user.profile?.firstName || user.email?.split('@')[0] || 'User'}
                                     </p>
-                                    <p className="text-xs text-gray-500">{user.engagement.points} pts</p>
+                                    <p className="text-xs text-gray-500">{user.engagement?.points || 0} pts</p>
                                 </div>
                             </Link>
                         ) : (

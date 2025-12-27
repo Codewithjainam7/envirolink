@@ -20,8 +20,8 @@ const containerVariants = {
 const itemVariants = {
     hidden: { opacity: 0, y: 30, filter: 'blur(10px)' },
 
-// NEW:
-visible: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.6, ease: [0.165, 0.84, 0.44, 1] as const } },
+    // NEW:
+    visible: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.6, ease: [0.165, 0.84, 0.44, 1] as const } },
 };
 
 // Floating green blobs component
@@ -83,12 +83,16 @@ function FloatingGreenBlobs() {
 }
 
 export default function HomePage() {
-    const { reports, cityStats, user, setIsReportSheetOpen, setSelectedReport } = useAppStore();
+    const { reports, cityStats, user, setIsReportSheetOpen, setSelectedReport, initializeAuth, fetchReports } = useAppStore();
     const [mounted, setMounted] = useState(false);
     const [isBooting, setIsBooting] = useState(true);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
     useEffect(() => {
+        // Initialize auth and fetch data on mount
+        initializeAuth();
+        fetchReports();
+
         // Boot animation for 2.5 seconds
         const bootTimer = setTimeout(() => {
             setIsBooting(false);

@@ -61,7 +61,7 @@ export default function ReportCard({ report, onClick, variant = 'default' }: Rep
                     </div>
                     <p className="text-sm text-gray-500 truncate flex items-center gap-1">
                         <MapPin size={12} />
-                        {report.location?.locality || report.locality || 'Unknown'} · {timeAgo}
+                        {report.location?.locality || report.location?.address || 'Unknown'} · {timeAgo}
                     </p>
                 </div>
 
@@ -136,7 +136,7 @@ export default function ReportCard({ report, onClick, variant = 'default' }: Rep
 
                 <div className="flex items-center gap-2 text-sm text-gray-600 mb-2 min-w-0">
                     <MapPin size={14} className="text-emerald-500 flex-shrink-0" />
-                    <span className="truncate block">{report.location?.address || report.address || 'Location not specified'}</span>
+                    <span className="truncate block">{report.location?.address || 'Location not specified'}</span>
                 </div>
 
                 <div className="flex items-center gap-2 text-xs text-gray-400">

@@ -127,7 +127,7 @@ export function useCreateReport() {
                         report_id: typedReport.id,
                         url: publicUrl,
                         storage_path: fileName,
-                    });
+                    } as any);
                 }
             }
 

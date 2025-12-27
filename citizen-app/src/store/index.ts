@@ -98,11 +98,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
             if (session?.user) {
                 // Fetch user profile from profiles table
-                const { data: profile } = await supabase
+                const { data } = await supabase
                     .from('profiles')
                     .select('*')
                     .eq('id', session.user.id)
                     .single();
+
+                // Type the profile data
+                const profile = data as {
+                    first_name?: string;
+                    last_name?: string;
+                    full_name?: string;
+                    avatar_url?: string;
+                    reports_submitted?: number;
+                    reports_resolved?: number;
+                    points?: number;
+                } | null;
 
                 const userData: User = {
                     id: session.user.id,
@@ -163,7 +174,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                     is_anonymous: newReport.isAnonymous,
                     sla_hours: 24,
                     sla_due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                })
+                } as any)
                 .select()
                 .single();
 
@@ -177,7 +188,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                     // If it's a base64 image, upload to Supabase storage
                     if (imageUrl.startsWith('data:')) {
                         const base64Data = imageUrl.split(',')[1];
-                        const fileName = `${reportData.id}/${Date.now()}-${i}.jpg`;
+                        const fileName = `${(reportData as any).id}/${Date.now()}-${i}.jpg`;
 
                         const { data: uploadData, error: uploadError } = await supabase.storage
                             .from('report-images')
@@ -190,8 +201,9 @@ export const useAppStore = create<AppState>((set, get) => ({
                                 .from('report-images')
                                 .getPublicUrl(fileName);
 
+                            // @ts-ignore - Supabase types not generated
                             await supabase.from('report_images').insert({
-                                report_id: reportData.id,
+                                report_id: (reportData as any).id,
                                 url: publicUrl,
                                 storage_path: fileName,
                             });
@@ -202,13 +214,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
             // Update user stats if logged in
             if (user && !newReport.isAnonymous) {
-                await supabase
-                    .from('profiles')
-                    .update({
-                        reports_submitted: (user.engagement?.totalReports || 0) + 1,
-                        points: (user.engagement?.points || 0) + 10
-                    })
-                    .eq('id', user.id);
+                // @ts-ignore - Supabase types not generated
+                await supabase.from('profiles').update({
+                    reports_submitted: (user.engagement?.totalReports || 0) + 1,
+                    points: (user.engagement?.points || 0) + 10
+                }).eq('id', user.id);
             }
 
             // Refresh reports

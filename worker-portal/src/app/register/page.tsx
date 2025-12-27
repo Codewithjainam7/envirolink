@@ -181,7 +181,7 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-gray-50 py-8 px-4 relative overflow-hidden">
+        <div className="min-h-screen bg-gradient-to-br from-gray-100 via-emerald-50/50 to-gray-200 py-8 px-4 relative overflow-hidden">
             <FloatingGreenBlobs />
 
             <div className="max-w-lg mx-auto relative z-10">

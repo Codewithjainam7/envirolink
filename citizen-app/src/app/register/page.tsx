@@ -104,7 +104,7 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-100 via-emerald-50/50 to-gray-200 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+        <div className="min-h-screen bg-gradient-to-br from-emerald-100/80 via-gray-100 to-emerald-50 flex flex-col items-center justify-center p-4 relative overflow-hidden">
             <FloatingGreenBlobs />
 
             <motion.div

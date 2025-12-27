@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import { createClient } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Filter, Search, MapPin, Navigation, Layers,
@@ -37,11 +38,52 @@ export default function MapViewPage() {
     useEffect(() => {
         const fetchReports = async () => {
             try {
-                const response = await fetch('http://localhost:3000/api/reports');
-                if (response.ok) {
-                    const data = await response.json();
-                    setReports(data.reports);
-                }
+                const supabase = createClient();
+                const { data: reportsData, error: reportsError } = await supabase
+                    .from('reports')
+                    .select('*')
+                    .neq('status', 'resolved') // Optional: Don't show resolved on map by default? Or show all. Let's show all.
+
+                if (reportsError) throw reportsError;
+
+                const { data: imagesData } = await supabase
+                    .from('report_images')
+                    .select('*');
+
+                const mappedReports: Report[] = (reportsData || []).map((r: any) => ({
+                    id: r.id,
+                    reportId: r.report_id,
+                    location: {
+                        latitude: r.latitude,
+                        longitude: r.longitude,
+                        address: r.address,
+                        locality: r.locality,
+                        city: r.city
+                    },
+                    category: r.category,
+                    severity: r.severity,
+                    status: r.status,
+                    description: r.description,
+                    reporterName: 'Anonymous',
+                    isAnonymous: r.is_anonymous,
+                    assignedTo: r.assigned_department_id ? {
+                        departmentId: r.assigned_department_id,
+                        departmentName: r.assigned_department_name,
+                        workerId: r.assigned_worker_id,
+                        workerName: r.assigned_worker_name
+                    } : undefined,
+                    slaHours: r.sla_hours,
+                    slaDueAt: r.sla_due_at,
+                    isSlaBreach: r.is_sla_breach,
+                    createdAt: r.created_at,
+                    updatedAt: r.updated_at,
+                    images: imagesData?.filter((img: any) => img.report_id === r.id).map((img: any) => ({
+                        id: img.id,
+                        url: img.url
+                    })) || []
+                }));
+
+                setReports(mappedReports);
             } catch (error) {
                 console.error('Failed to fetch reports:', error);
             } finally {

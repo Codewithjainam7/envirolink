@@ -85,7 +85,7 @@ export default function DashboardPage() {
 
       // Calculate real stats
       const total = mappedReports.length;
-      const newCount = mappedReports.filter(r => r.status === 'submitted' || r.status === 'pending').length;
+      const newCount = mappedReports.filter(r => r.status === 'submitted').length;
       const inProgressCount = mappedReports.filter(r => ['under_review', 'assigned', 'in_progress'].includes(r.status)).length;
       const resolvedCount = mappedReports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
       const breachCount = mappedReports.filter(r => r.isSlaBreach).length;

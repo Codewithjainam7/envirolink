@@ -152,7 +152,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // Submit report to Supabase
     submitReport: async () => {
-        const { newReport, user } = get();
+        const { newReport, user, reports } = get();
         set({ isLoading: true });
 
         try {
@@ -163,6 +163,53 @@ export const useAppStore = create<AppState>((set, get) => ({
                 location: newReport.location,
                 hasImages: newReport.images.length
             });
+
+            // === ANTI-ABUSE CHECKS ===
+
+            // Helper function to calculate distance between two coordinates (Haversine formula)
+            const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+                const R = 6371e3; // Earth's radius in meters
+                const φ1 = lat1 * Math.PI / 180;
+                const φ2 = lat2 * Math.PI / 180;
+                const Δφ = (lat2 - lat1) * Math.PI / 180;
+                const Δλ = (lon2 - lon1) * Math.PI / 180;
+                const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+                return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            };
+
+            // Check for duplicate reports (same location within 100m in last 24 hours)
+            if (newReport.location && user) {
+                const userRecentReports = reports.filter(r => {
+                    const isUserReport = r.reporterId === user.id || (!r.isAnonymous && r.reporterId);
+                    const reportAge = Date.now() - new Date(r.createdAt).getTime();
+                    const isRecent = reportAge < 24 * 60 * 60 * 1000; // 24 hours
+                    return isRecent;
+                });
+
+                const isDuplicate = userRecentReports.some(report => {
+                    if (!report.location?.latitude || !report.location?.longitude) return false;
+                    const distance = haversineDistance(
+                        newReport.location!.latitude,
+                        newReport.location!.longitude,
+                        report.location.latitude,
+                        report.location.longitude
+                    );
+                    return distance < 100; // Within 100 meters
+                });
+
+                if (isDuplicate) {
+                    set({ isLoading: false });
+                    throw new Error('DUPLICATE_REPORT: You already submitted a report at this location recently. Please wait 24 hours or report a different location.');
+                }
+
+                // Rate limit: Max 10 reports per day
+                const todayReports = userRecentReports.length;
+                if (todayReports >= 10) {
+                    set({ isLoading: false });
+                    throw new Error('RATE_LIMIT: You have reached the maximum of 10 reports per day. Please try again tomorrow.');
+                }
+            }
+
 
             // Insert report to Supabase
             const { data: reportData, error: reportError } = await supabase
@@ -241,13 +288,13 @@ export const useAppStore = create<AppState>((set, get) => ({
                 }
             }
 
-            // Update user stats if logged in (non-fatal if fails)
+            // Update user stats if logged in (non-fatal if fails) - Award 50 points per report
             if (user && !newReport.isAnonymous) {
                 try {
                     // @ts-ignore - Supabase types not generated
                     await supabase.from('profiles').update({
                         reports_submitted: (user.engagement?.totalReports || 0) + 1,
-                        points: (user.engagement?.points || 0) + 10
+                        points: (user.engagement?.points || 0) + 50  // 50 points per valid report
                     }).eq('id', user.id);
                 } catch (profileError) {
                     console.warn('Profile update failed (non-fatal):', profileError);

@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="light" suppressHydrationWarning>
-      <body className={`${geist.variable} antialiased bg-gray-50`}>
+      <body className={`${geist.variable} antialiased bg-gray-50`} suppressHydrationWarning>
         <BootAppWrapper>
           {children}
         </BootAppWrapper>

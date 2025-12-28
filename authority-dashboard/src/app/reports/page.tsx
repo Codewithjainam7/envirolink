@@ -290,6 +290,15 @@ function ReportDetailModal({ report, onClose }: { report: Report; onClose: () =>
     );
 }
 
+interface Worker {
+    id: string;
+    first_name: string;
+    last_name: string;
+    zone: string;
+    phone: string;
+    status: string;
+}
+
 export default function ReportsPage() {
     const [mounted, setMounted] = useState(false);
     const [reports, setReports] = useState<Report[]>([]);
@@ -298,6 +307,9 @@ export default function ReportsPage() {
     const [selectedReports, setSelectedReports] = useState<string[]>([]);
     const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+    const [showAssignModal, setShowAssignModal] = useState(false);
+    const [availableWorkers, setAvailableWorkers] = useState<Worker[]>([]);
+    const [bulkActionLoading, setBulkActionLoading] = useState(false);
     const [advancedFilters, setAdvancedFilters] = useState({
         category: '',
         severity: '',
@@ -337,11 +349,11 @@ export default function ReportsPage() {
                     description: r.description,
                     reporterName: r.is_anonymous ? 'Anonymous' : 'Citizen',
                     isAnonymous: r.is_anonymous,
-                    assignedTo: r.assigned_department_id ? {
+                    assignedTo: (r.assigned_worker_id || r.assigned_department_id) ? {
                         departmentId: r.assigned_department_id,
-                        departmentName: r.assigned_department_name || 'Department',
+                        departmentName: r.assigned_department_name || 'Waste Management',
                         workerId: r.assigned_worker_id,
-                        workerName: r.assigned_worker_name || 'Worker'
+                        workerName: r.assigned_worker_name || 'Assigned Worker'
                     } : undefined,
                     slaHours: r.sla_hours || 24,
                     slaDueAt: r.sla_due_at || new Date(new Date(r.created_at).getTime() + 24 * 60 * 60 * 1000).toISOString(),
@@ -424,6 +436,114 @@ export default function ReportsPage() {
         advancedFilters.dateFrom ||
         advancedFilters.dateTo ||
         advancedFilters.slaBreachOnly;
+
+    // Fetch available workers for assignment
+    const fetchWorkers = async () => {
+        const supabase = createClient();
+        const { data, error } = await supabase
+            .from('workers')
+            .select('id, first_name, last_name, zone, phone, status')
+            .in('status', ['approved', 'active', 'available']);
+
+        if (!error && data) {
+            setAvailableWorkers(data);
+        }
+    };
+
+    // Handle bulk assign - opens modal with worker selection
+    const handleBulkAssign = async () => {
+        if (selectedReports.length === 0) return;
+
+        await fetchWorkers();
+        setShowAssignModal(true);
+    };
+
+    // Assign selected reports to a worker
+    const assignToWorker = async (worker: Worker) => {
+        setBulkActionLoading(true);
+        try {
+            const supabase = createClient();
+
+            const { error } = await supabase
+                .from('reports')
+                .update({
+                    status: 'assigned',
+                    assigned_worker_id: worker.id,
+                    assigned_worker_name: `${worker.first_name} ${worker.last_name}`,
+                    assigned_department_id: 'dept-1',
+                    assigned_department_name: 'Sanitation Department',
+                    updated_at: new Date().toISOString()
+                })
+                .in('id', selectedReports);
+
+            if (error) throw error;
+
+            // Update local state
+            setReports(reports.map(r =>
+                selectedReports.includes(r.id)
+                    ? {
+                        ...r,
+                        status: 'assigned' as ReportStatus,
+                        assignedTo: {
+                            departmentId: 'dept-1',
+                            departmentName: 'Sanitation Department',
+                            workerId: worker.id,
+                            workerName: `${worker.first_name} ${worker.last_name}`
+                        }
+                    }
+                    : r
+            ));
+
+            setSelectedReports([]);
+            setShowAssignModal(false);
+            alert(`Successfully assigned ${selectedReports.length} report(s) to ${worker.first_name} ${worker.last_name}`);
+        } catch (err) {
+            console.error('Error assigning reports:', err);
+            alert('Failed to assign reports. Please try again.');
+        } finally {
+            setBulkActionLoading(false);
+        }
+    };
+
+    // Handle bulk resolve - marks selected reports as resolved
+    const handleBulkResolve = async () => {
+        if (selectedReports.length === 0) return;
+
+        if (!confirm(`Are you sure you want to mark ${selectedReports.length} report(s) as resolved?`)) {
+            return;
+        }
+
+        setBulkActionLoading(true);
+        try {
+            const supabase = createClient();
+
+            const { error } = await supabase
+                .from('reports')
+                .update({
+                    status: 'resolved',
+                    updated_at: new Date().toISOString()
+                })
+                .in('id', selectedReports);
+
+            if (error) throw error;
+
+            // Update local state
+            setReports(reports.map(r =>
+                selectedReports.includes(r.id)
+                    ? { ...r, status: 'resolved' as ReportStatus }
+                    : r
+            ));
+
+            const count = selectedReports.length;
+            setSelectedReports([]);
+            alert(`Successfully resolved ${count} report(s)`);
+        } catch (err) {
+            console.error('Error resolving reports:', err);
+            alert('Failed to resolve reports. Please try again.');
+        } finally {
+            setBulkActionLoading(false);
+        }
+    };
 
     // Enhanced PDF Export
     const exportToPDF = () => {
@@ -563,6 +683,89 @@ export default function ReportsPage() {
                 )}
             </AnimatePresence>
 
+            {/* Assign Worker Modal */}
+            <AnimatePresence>
+                {showAssignModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+                        onClick={() => setShowAssignModal(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-4 text-white">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-xl font-bold">Assign Worker</h2>
+                                        <p className="text-emerald-100 text-sm">Select a worker for {selectedReports.length} report(s)</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowAssignModal(false)}
+                                        className="p-2 hover:bg-white/20 rounded-xl transition-colors"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Worker List */}
+                            <div className="p-4 max-h-[50vh] overflow-y-auto">
+                                {availableWorkers.length === 0 ? (
+                                    <div className="text-center py-8 text-gray-500">
+                                        <User size={48} className="mx-auto mb-3 text-gray-300" />
+                                        <p className="font-medium">No workers available</p>
+                                        <p className="text-sm mt-1">Please add workers in Worker Management</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {availableWorkers.map((worker) => (
+                                            <button
+                                                key={worker.id}
+                                                onClick={() => assignToWorker(worker)}
+                                                disabled={bulkActionLoading}
+                                                className="w-full flex items-center gap-4 p-4 bg-gray-50 hover:bg-emerald-50 rounded-xl transition-colors border border-gray-200 hover:border-emerald-200 disabled:opacity-50"
+                                            >
+                                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-lg font-bold text-white shadow-lg">
+                                                    {worker.first_name[0]}{worker.last_name?.[0] || ''}
+                                                </div>
+                                                <div className="flex-1 text-left">
+                                                    <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
+                                                    <p className="text-sm text-gray-500">Zone: {worker.zone} • {worker.phone}</p>
+                                                </div>
+                                                <div className={`px-3 py-1 rounded-full text-xs font-bold ${worker.status === 'active'
+                                                    ? 'bg-emerald-100 text-emerald-700'
+                                                    : 'bg-blue-100 text-blue-700'
+                                                    }`}>
+                                                    {worker.status}
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Footer */}
+                            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100">
+                                <button
+                                    onClick={() => setShowAssignModal(false)}
+                                    className="w-full px-5 py-2.5 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <div className="relative z-10">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-6">
@@ -583,8 +786,8 @@ export default function ReportsPage() {
                         <button
                             onClick={() => setShowAdvancedFilter(!showAdvancedFilter)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm shadow-lg transition-all ${hasActiveAdvancedFilters
-                                    ? 'bg-emerald-600 text-white shadow-emerald-600/20'
-                                    : 'bg-emerald-500 text-white shadow-emerald-500/20 hover:bg-emerald-600'
+                                ? 'bg-emerald-600 text-white shadow-emerald-600/20'
+                                : 'bg-emerald-500 text-white shadow-emerald-500/20 hover:bg-emerald-600'
                                 }`}
                         >
                             <Filter size={16} />
@@ -731,21 +934,32 @@ export default function ReportsPage() {
                             <motion.div
                                 initial={{ opacity: 0, x: 20 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100"
+                                className="flex items-center gap-3 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100"
                             >
-                                <span className="text-sm font-medium text-emerald-800">{selectedReports.length} selected</span>
-                                <div className="h-4 w-px bg-emerald-200" />
-                                <button className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors" title="Assign">
+                                <span className="text-sm font-bold text-emerald-800">{selectedReports.length} selected</span>
+                                <div className="h-5 w-px bg-emerald-200" />
+                                <button
+                                    onClick={handleBulkAssign}
+                                    disabled={bulkActionLoading}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
+                                >
                                     <UserPlus size={16} />
+                                    Assign
                                 </button>
-                                <button className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors" title="Resolve">
+                                <button
+                                    onClick={handleBulkResolve}
+                                    disabled={bulkActionLoading}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
+                                >
                                     <CheckCircle size={16} />
+                                    Resolve
                                 </button>
                                 <button
                                     onClick={() => setSelectedReports([])}
-                                    className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors ml-1"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm font-medium ml-1"
                                 >
                                     <X size={16} />
+                                    Clear
                                 </button>
                             </motion.div>
                         )}

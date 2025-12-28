@@ -8,6 +8,9 @@ import {
 } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
 import { createClient } from '@/lib/supabase';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { format } from 'date-fns';
 
 interface Stats {
     totalReports: number;
@@ -118,6 +121,155 @@ export default function AnalyticsPage() {
         ? Math.round((stats.resolvedReports / stats.totalReports) * 100)
         : 0;
 
+    // Export Analytics PDF - Same design as Reports page
+    const exportAnalyticsPDF = () => {
+        const doc = new jsPDF('l', 'mm', 'a4');
+        const pageWidth = doc.internal.pageSize.getWidth();
+
+        // Header with gradient effect
+        doc.setFillColor(16, 185, 129);
+        doc.rect(0, 0, pageWidth, 35, 'F');
+
+        // Logo/Title
+        doc.setFontSize(24);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.text('EnviroLink', 14, 18);
+
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Analytics Report', 14, 26);
+
+        // Report info box
+        doc.setFillColor(240, 253, 244);
+        doc.roundedRect(14, 42, pageWidth - 28, 20, 3, 3, 'F');
+
+        doc.setFontSize(10);
+        doc.setTextColor(16, 185, 129);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Analytics Summary', 20, 50);
+
+        doc.setTextColor(75, 85, 99);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Generated: ${format(new Date(), 'PPPP')} at ${format(new Date(), 'pp')}`, 20, 56);
+        doc.text(`Total Reports: ${stats.totalReports}`, 160, 50);
+        doc.text(`Resolved: ${stats.resolvedReports}`, 160, 56);
+        doc.text(`Pending: ${stats.pendingReports}`, 210, 50);
+        doc.text(`In Progress: ${stats.inProgressReports}`, 210, 56);
+        doc.text(`Resolution Rate: ${resolutionRate}%`, 265, 53);
+
+        // Key Metrics Table
+        const metricsData = [
+            ['Total Reports', stats.totalReports.toString()],
+            ['Resolved', stats.resolvedReports.toString()],
+            ['Pending', stats.pendingReports.toString()],
+            ['In Progress', stats.inProgressReports.toString()],
+            ['Resolution Rate', `${resolutionRate}%`],
+            ['Active Workers', stats.totalWorkers.toString()],
+        ];
+
+        autoTable(doc, {
+            head: [['Metric', 'Value']],
+            body: metricsData,
+            startY: 70,
+            margin: { left: 14, right: pageWidth - 95 },
+            styles: {
+                fontSize: 9,
+                cellPadding: 4,
+                lineColor: [229, 231, 235],
+                lineWidth: 0.1,
+            },
+            headStyles: {
+                fillColor: [16, 185, 129],
+                textColor: 255,
+                fontStyle: 'bold'
+            },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            columnStyles: {
+                0: { fontStyle: 'bold', cellWidth: 45 },
+                1: { halign: 'right', cellWidth: 30 },
+            },
+        });
+
+        // Weekly Trends Table
+        const weeklyTableData = weeklyData.map(d => [d.day, d.reports.toString(), d.resolved.toString()]);
+
+        autoTable(doc, {
+            head: [['Day', 'Reports', 'Resolved']],
+            body: weeklyTableData,
+            startY: 70,
+            margin: { left: 110, right: pageWidth - 195 },
+            styles: {
+                fontSize: 9,
+                cellPadding: 4,
+                lineColor: [229, 231, 235],
+                lineWidth: 0.1,
+            },
+            headStyles: {
+                fillColor: [16, 185, 129],
+                textColor: 255,
+                fontStyle: 'bold'
+            },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            columnStyles: {
+                0: { cellWidth: 25 },
+                1: { halign: 'center', cellWidth: 25 },
+                2: { halign: 'center', cellWidth: 25 },
+            },
+        });
+
+        // Workers table
+        if (workers.length > 0) {
+            const workersTableData = workers.slice(0, 10).map((w, i) => [
+                (i + 1).toString(),
+                `${w.first_name} ${w.last_name}`,
+                w.zone || 'Unassigned',
+                w.status
+            ]);
+
+            autoTable(doc, {
+                head: [['#', 'Name', 'Zone', 'Status']],
+                body: workersTableData,
+                startY: 70,
+                margin: { left: 200, right: 14 },
+                styles: {
+                    fontSize: 9,
+                    cellPadding: 4,
+                    lineColor: [229, 231, 235],
+                    lineWidth: 0.1,
+                },
+                headStyles: {
+                    fillColor: [16, 185, 129],
+                    textColor: 255,
+                    fontStyle: 'bold'
+                },
+                alternateRowStyles: { fillColor: [249, 250, 251] },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 12 },
+                    1: { cellWidth: 35 },
+                    2: { cellWidth: 25 },
+                    3: { cellWidth: 25 },
+                },
+            });
+        }
+
+        // Footer
+        const pageCount = doc.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(156, 163, 175);
+            doc.text(
+                `Page ${i} of ${pageCount} | EnviroLink Analytics - ${format(new Date(), 'yyyy-MM-dd')}`,
+                pageWidth / 2,
+                doc.internal.pageSize.getHeight() - 10,
+                { align: 'center' }
+            );
+        }
+
+        doc.save(`EnviroLink-Analytics-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`);
+    };
+
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -145,7 +297,10 @@ export default function AnalyticsPage() {
                             <TrendingUp size={18} />
                             Refresh
                         </button>
-                        <button className="flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-sm border border-emerald-100 rounded-xl text-emerald-700 font-medium hover:bg-emerald-50 transition-all shadow-sm">
+                        <button
+                            onClick={exportAnalyticsPDF}
+                            className="flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-sm border border-emerald-100 rounded-xl text-emerald-700 font-medium hover:bg-emerald-50 transition-all shadow-sm"
+                        >
                             <Download size={18} />
                             Export
                         </button>

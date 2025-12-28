@@ -5,7 +5,6 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
     const { searchParams, origin } = new URL(request.url)
     const code = searchParams.get('code')
-    // if "next" is in param, use it as the redirect URL
     const next = searchParams.get('next') ?? '/'
 
     if (code) {
@@ -25,15 +24,44 @@ export async function GET(request: Request) {
                             )
                         } catch {
                             // The `setAll` method was called from a Server Component.
-                            // This can be ignored if you have middleware refreshing
-                            // user sessions.
                         }
                     },
                 },
             }
         )
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (!error) {
+
+        const { data: authData, error: authError } = await supabase.auth.exchangeCodeForSession(code)
+
+        if (!authError && authData?.user) {
+            // Check if user is an approved worker
+            const { data: worker, error: workerError } = await supabase
+                .from('workers')
+                .select('status')
+                .eq('email', authData.user.email)
+                .single()
+
+            if (workerError || !worker) {
+                // No worker profile - redirect to login with error
+                await supabase.auth.signOut()
+                return NextResponse.redirect(`${origin}/login?error=no-worker-profile`)
+            }
+
+            if (worker.status === 'pending_approval') {
+                await supabase.auth.signOut()
+                return NextResponse.redirect(`${origin}/login?error=pending-approval`)
+            }
+
+            if (worker.status === 'rejected') {
+                await supabase.auth.signOut()
+                return NextResponse.redirect(`${origin}/login?error=rejected`)
+            }
+
+            if (worker.status !== 'approved' && worker.status !== 'active') {
+                await supabase.auth.signOut()
+                return NextResponse.redirect(`${origin}/login?error=invalid-status`)
+            }
+
+            // Worker is approved - allow access
             return NextResponse.redirect(`${origin}${next}`)
         }
     }

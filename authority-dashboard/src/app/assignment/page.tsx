@@ -38,6 +38,9 @@ export default function AIAssignmentPage() {
     const [isAutoAssigning, setIsAutoAssigning] = useState(false);
     const [assignedCount, setAssignedCount] = useState(0);
     const [selectedReport, setSelectedReport] = useState<string | null>(null);
+    // Settings toggles
+    const [autoAssignOnSubmit, setAutoAssignOnSubmit] = useState(false);
+    const [workerProximity, setWorkerProximity] = useState(true);
 
     useEffect(() => {
         fetchData();
@@ -337,8 +340,11 @@ export default function AIAssignmentPage() {
                                             <p className="font-semibold text-gray-900">Auto-assign on submit</p>
                                             <p className="text-sm text-gray-500">Automatically assign when report is submitted</p>
                                         </div>
-                                        <button className="w-12 h-6 bg-gray-300 rounded-full relative cursor-pointer shadow-inner">
-                                            <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
+                                        <button
+                                            onClick={() => setAutoAssignOnSubmit(!autoAssignOnSubmit)}
+                                            className={`w-12 h-6 rounded-full relative cursor-pointer shadow-inner transition-colors ${autoAssignOnSubmit ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                                        >
+                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${autoAssignOnSubmit ? 'right-1' : 'left-1'}`} />
                                         </button>
                                     </div>
                                     <div className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 transition-colors">
@@ -346,8 +352,11 @@ export default function AIAssignmentPage() {
                                             <p className="font-semibold text-gray-900">Worker proximity</p>
                                             <p className="text-sm text-gray-500">Assign to nearest worker by default</p>
                                         </div>
-                                        <button className="w-12 h-6 bg-emerald-500 rounded-full relative cursor-pointer shadow-inner">
-                                            <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
+                                        <button
+                                            onClick={() => setWorkerProximity(!workerProximity)}
+                                            className={`w-12 h-6 rounded-full relative cursor-pointer shadow-inner transition-colors ${workerProximity ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                                        >
+                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${workerProximity ? 'right-1' : 'left-1'}`} />
                                         </button>
                                     </div>
                                 </div>

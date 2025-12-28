@@ -55,7 +55,27 @@ export default function SettingsPage() {
 
     const handleSave = () => {
         setIsSaving(true);
-        setTimeout(() => setIsSaving(false), 1500);
+        setTimeout(() => {
+            setIsSaving(false);
+            alert('Settings saved successfully!');
+        }, 1500);
+    };
+
+    const handleSignOut = () => {
+        if (confirm('Are you sure you want to sign out?')) {
+            // Clear any local storage/auth state
+            alert('Signed out successfully!');
+            // In a real app, would redirect to login
+            window.location.href = '/login';
+        }
+    };
+
+    const handleRevokeSessions = () => {
+        if (confirm('This will sign you out from all devices. Are you sure?')) {
+            alert('All sessions have been revoked. You will be signed out.');
+            // In a real app, would invalidate all sessions and redirect
+            window.location.href = '/login';
+        }
     };
 
     const Toggle = ({ checked, onChange }: { checked: boolean; onChange: (val: boolean) => void }) => (
@@ -137,7 +157,10 @@ export default function SettingsPage() {
                                         <p className="text-xs text-gray-500 truncate">admin@mumbai-auth.gov</p>
                                     </div>
                                 </div>
-                                <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 transition-colors">
+                                <button
+                                    onClick={handleSignOut}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 transition-colors"
+                                >
                                     <LogOut size={18} />
                                     Sign Out
                                 </button>
@@ -376,7 +399,10 @@ export default function SettingsPage() {
                                         </div>
 
                                         <div className="pt-4 border-t border-gray-100">
-                                            <button className="text-red-500 font-bold text-sm hover:underline flex items-center gap-2">
+                                            <button
+                                                onClick={handleRevokeSessions}
+                                                className="text-red-500 font-bold text-sm hover:underline flex items-center gap-2"
+                                            >
                                                 <LogOut size={16} />
                                                 Revoke all active sessions
                                             </button>

@@ -1,44 +1,154 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Wallet, TrendingUp, Calendar, Download, ChevronRight, CheckCircle, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { ArrowLeft, Wallet, TrendingUp, Calendar, Download, ChevronRight, Loader2 } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
 import BottomNav from '@/components/BottomNav';
 import Link from 'next/link';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, Tooltip } from 'recharts';
+import { createClient } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
-// Mock earnings data
-const EARNINGS_SUMMARY = {
-    today: 450,
-    thisWeek: 3200,
-    thisMonth: 12500,
-    pending: 800,
-    available: 11700,
-};
-
-const WEEKLY_DATA = [
-    { day: 'Mon', amount: 350 },
-    { day: 'Tue', amount: 450 },
-    { day: 'Wed', amount: 200 },
-    { day: 'Thu', amount: 600 },
-    { day: 'Fri', amount: 400 },
-    { day: 'Sat', amount: 800 },
-    { day: 'Sun', amount: 450 },
-];
-
-const TRANSACTIONS = [
-    { id: 1, type: 'Task Completed', taskId: 'RPT-0121', amount: 150, date: 'Today, 2:30 PM', status: 'credited', icon: 'check' },
-    { id: 2, type: 'Task Completed', taskId: 'RPT-0120', amount: 200, date: 'Today, 11:15 AM', status: 'credited', icon: 'check' },
-    { id: 3, type: 'Bonus', taskId: 'Weekly Bonus', amount: 500, date: 'Yesterday', status: 'credited', icon: 'gift' },
-    { id: 4, type: 'Task Completed', taskId: 'RPT-0118', amount: 100, date: 'Yesterday', status: 'credited', icon: 'check' },
-    { id: 5, type: 'Withdrawal', taskId: 'Bank Transfer', amount: -5000, date: 'Dec 24', status: 'completed', icon: 'bank' },
-    { id: 6, type: 'Task Completed', taskId: 'RPT-0115', amount: 175, date: 'Dec 24', status: 'credited', icon: 'check' },
-];
+interface Transaction {
+    id: string;
+    type: string;
+    taskId: string;
+    amount: number;
+    date: string;
+    status: string;
+}
 
 export default function EarningsPage() {
-    // Simple state to toggle chart view if needed, or just interactions
-    const [selectedPeriod, setSelectedPeriod] = useState('Week');
+    const [loading, setLoading] = useState(true);
+    const [earnings, setEarnings] = useState({ today: 0, thisWeek: 0, thisMonth: 0, total: 0 });
+    const [weeklyData, setWeeklyData] = useState<{ day: string; amount: number }[]>([]);
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const router = useRouter();
+    const supabase = createClient();
+
+    useEffect(() => {
+        fetchEarnings();
+    }, []);
+
+    const fetchEarnings = async () => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                router.push('/login');
+                return;
+            }
+
+            const { data: workerData } = await supabase
+                .from('workers')
+                .select('id')
+                .eq('email', user.email)
+                .single();
+
+            if (!workerData) {
+                router.push('/login');
+                return;
+            }
+
+            // Get all completed tasks for this worker
+            const { data: completedTasks } = await supabase
+                .from('reports')
+                .select('id, report_id, severity, updated_at')
+                .eq('assigned_worker_id', workerData.id)
+                .eq('status', 'resolved')
+                .order('updated_at', { ascending: false });
+
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const weekStart = new Date(todayStart);
+            weekStart.setDate(weekStart.getDate() - 7);
+            const monthStart = new Date(todayStart);
+            monthStart.setDate(1);
+
+            let todayEarnings = 0;
+            let weekEarnings = 0;
+            let monthEarnings = 0;
+            let totalEarnings = 0;
+
+            const txnList: Transaction[] = [];
+            const dailyAmounts: { [key: string]: number } = {};
+
+            // Initialize last 7 days
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                dailyAmounts[days[d.getDay()]] = 0;
+            }
+
+            (completedTasks || []).forEach((task, idx) => {
+                const reward = task.severity === 'critical' ? 200 : task.severity === 'high' ? 150 : 100;
+                const taskDate = new Date(task.updated_at);
+
+                totalEarnings += reward;
+                if (taskDate >= todayStart) todayEarnings += reward;
+                if (taskDate >= weekStart) {
+                    weekEarnings += reward;
+                    dailyAmounts[days[taskDate.getDay()]] += reward;
+                }
+                if (taskDate >= monthStart) monthEarnings += reward;
+
+                // Add to transactions (limit to 10)
+                if (idx < 10) {
+                    txnList.push({
+                        id: task.id,
+                        type: 'Task Completed',
+                        taskId: task.report_id || `RPT-${idx}`,
+                        amount: reward,
+                        date: formatDate(task.updated_at),
+                        status: 'credited'
+                    });
+                }
+            });
+
+            setEarnings({
+                today: todayEarnings,
+                thisWeek: weekEarnings,
+                thisMonth: monthEarnings,
+                total: totalEarnings
+            });
+
+            // Convert daily amounts to chart data
+            const chartData = Object.entries(dailyAmounts).map(([day, amount]) => ({
+                day,
+                amount
+            }));
+            setWeeklyData(chartData);
+            setTransactions(txnList);
+
+        } catch (error) {
+            console.error('Error fetching earnings:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const formatDate = (dateString: string) => {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) {
+            return `Today, ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+        } else if (diffDays === 1) {
+            return 'Yesterday';
+        } else {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <Loader2 size={40} className="animate-spin text-emerald-500" />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 to-emerald-50/30 pb-24 relative font-sans">
@@ -46,7 +156,6 @@ export default function EarningsPage() {
 
             {/* Vibrant Header Section */}
             <header className="relative bg-gradient-to-br from-emerald-600 to-teal-700 text-white pb-32 rounded-b-[3rem] shadow-2xl overflow-hidden">
-                {/* Decorative circles */}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-10 translate-x-10 pointer-events-none" />
                 <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-400/20 rounded-full blur-2xl translate-y-10 -translate-x-10 pointer-events-none" />
 
@@ -65,6 +174,7 @@ export default function EarningsPage() {
                         <motion.button
                             whileHover={{ scale: 1.1, rotate: 10 }}
                             whileTap={{ scale: 0.9 }}
+                            onClick={() => alert('Download feature coming soon!')}
                             className="p-2 bg-white/20 backdrop-blur-md rounded-xl hover:bg-white/30 transition text-emerald-50"
                         >
                             <Download size={20} />
@@ -77,16 +187,17 @@ export default function EarningsPage() {
                             animate={{ scale: 1, opacity: 1 }}
                             transition={{ type: "spring", stiffness: 200, damping: 20 }}
                         >
-                            <p className="text-emerald-100 text-sm font-medium mb-2 uppercase tracking-wide opacity-80">Available Balance</p>
+                            <p className="text-emerald-100 text-sm font-medium mb-2 uppercase tracking-wide opacity-80">Total Earnings</p>
                             <h2 className="text-5xl font-extrabold mb-6 tracking-tight relative inline-block">
                                 <span className="text-3xl align-top opacity-70">₹</span>
-                                {EARNINGS_SUMMARY.available.toLocaleString()}
+                                {earnings.total.toLocaleString()}
                             </h2>
                         </motion.div>
 
                         <motion.button
                             whileHover={{ scale: 1.05, boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)" }}
                             whileTap={{ scale: 0.98 }}
+                            onClick={() => alert('Withdrawal feature coming soon!')}
                             className="px-10 py-4 bg-white text-emerald-700 font-bold rounded-2xl shadow-xl hover:shadow-2xl transition-all relative overflow-hidden group"
                         >
                             <span className="relative z-10">Withdraw to Bank</span>
@@ -112,8 +223,7 @@ export default function EarningsPage() {
                         <div className="flex flex-col h-full justify-between relative z-10">
                             <span className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-2">Today</span>
                             <div className="flex items-end gap-1">
-                                <span className="text-2xl font-bold text-gray-900">₹{EARNINGS_SUMMARY.today}</span>
-                                <span className="text-xs text-emerald-500 font-bold mb-1 mb-1.5">+12%</span>
+                                <span className="text-2xl font-bold text-gray-900">₹{earnings.today}</span>
                             </div>
                         </div>
                     </motion.div>
@@ -130,7 +240,7 @@ export default function EarningsPage() {
                         <div className="flex flex-col h-full justify-between relative z-10">
                             <span className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-2">This Week</span>
                             <div className="flex items-end gap-1">
-                                <span className="text-2xl font-bold text-gray-900">₹{EARNINGS_SUMMARY.thisWeek.toLocaleString()}</span>
+                                <span className="text-2xl font-bold text-gray-900">₹{earnings.thisWeek.toLocaleString()}</span>
                             </div>
                         </div>
                     </motion.div>
@@ -145,14 +255,13 @@ export default function EarningsPage() {
                 >
                     <div className="p-6 pb-0 flex items-center justify-between">
                         <h3 className="font-bold text-gray-900">Weekly Earnings</h3>
-                        <select className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-lg outline-none cursor-pointer">
-                            <option>Last 7 Days</option>
-                            <option>This Month</option>
-                        </select>
+                        <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-lg">
+                            ₹{earnings.thisMonth.toLocaleString()} this month
+                        </span>
                     </div>
                     <div className="h-48 w-full mt-4">
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={WEEKLY_DATA}>
+                            <AreaChart data={weeklyData}>
                                 <defs>
                                     <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
@@ -184,42 +293,45 @@ export default function EarningsPage() {
                     className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-sm border border-white/50 overflow-hidden"
                 >
                     <div className="p-6 pb-2">
-                        <h3 className="font-bold text-gray-900 text-lg">Transactions</h3>
+                        <h3 className="font-bold text-gray-900 text-lg">Recent Transactions</h3>
                     </div>
 
-                    <div className="divide-y divide-gray-50">
-                        {TRANSACTIONS.map((tx, i) => (
-                            <motion.div
-                                key={tx.id}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 0.5 + (i * 0.1) }}
-                                whileHover={{ backgroundColor: 'rgba(249, 250, 251, 0.8)' }}
-                                className="p-4 flex items-center justify-between cursor-pointer group transition-colors"
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${tx.amount > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'
-                                        }`}>
-                                        {tx.amount > 0 ? <Wallet size={20} /> : <TrendingUp size={20} className="rotate-180" />}
+                    {transactions.length > 0 ? (
+                        <div className="divide-y divide-gray-50">
+                            {transactions.map((tx, i) => (
+                                <motion.div
+                                    key={tx.id}
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: 0.5 + (i * 0.05) }}
+                                    whileHover={{ backgroundColor: 'rgba(249, 250, 251, 0.8)' }}
+                                    className="p-4 flex items-center justify-between cursor-pointer group transition-colors"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 bg-emerald-100 text-emerald-600">
+                                            <Wallet size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-gray-900 text-sm group-hover:text-emerald-700 transition-colors">{tx.type}</p>
+                                            <p className="text-xs text-gray-400 font-medium">{tx.date} • {tx.taskId}</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className="font-bold text-gray-900 text-sm group-hover:text-emerald-700 transition-colors">{tx.type}</p>
-                                        <p className="text-xs text-gray-400 font-medium">{tx.date} • {tx.taskId}</p>
+                                    <div className="text-right">
+                                        <p className="font-bold text-sm text-emerald-600">
+                                            +₹{tx.amount}
+                                        </p>
+                                        <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">{tx.status}</p>
                                     </div>
-                                </div>
-                                <div className="text-right">
-                                    <p className={`font-bold text-sm ${tx.amount > 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
-                                        {tx.amount > 0 ? '+' : ''}₹{Math.abs(tx.amount)}
-                                    </p>
-                                    <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">{tx.status}</p>
-                                </div>
-                            </motion.div>
-                        ))}
-                    </div>
-
-                    <button className="w-full py-4 text-center text-sm font-bold text-emerald-600 hover:bg-emerald-50 transition-colors flex items-center justify-center gap-1">
-                        View All History <ChevronRight size={16} />
-                    </button>
+                                </motion.div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="p-8 text-center text-gray-500">
+                            <Wallet size={40} className="mx-auto mb-3 opacity-30" />
+                            <p>No transactions yet</p>
+                            <p className="text-sm">Complete tasks to earn rewards</p>
+                        </div>
+                    )}
                 </motion.div>
             </div>
 

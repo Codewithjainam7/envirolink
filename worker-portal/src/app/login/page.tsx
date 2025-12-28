@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -59,6 +59,22 @@ export default function LoginPage() {
     const router = useRouter();
     const supabase = createClient();
 
+    // Check for OAuth error params on mount
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const errorParam = params.get('error');
+        if (errorParam) {
+            const errorMessages: { [key: string]: string } = {
+                'no-worker-profile': 'No worker profile found. Please register first.',
+                'pending-approval': 'Your application is still pending approval. Please wait for admin approval.',
+                'rejected': 'Your application was not approved. Please contact support.',
+                'invalid-status': 'Your account status is invalid. Please contact support.',
+                'auth-code-error': 'Authentication failed. Please try again.',
+            };
+            setError(errorMessages[errorParam] || 'An error occurred. Please try again.');
+        }
+    }, []);
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -76,7 +92,6 @@ export default function LoginPage() {
                 .single();
 
             if (workerError) {
-                // No worker record - might be new or not a worker
                 await supabase.auth.signOut();
                 throw new Error('No worker profile found. Please register first.');
             }
@@ -91,7 +106,8 @@ export default function LoginPage() {
                 throw new Error('Your application was not approved. Please contact support.');
             }
 
-            if (worker.status !== 'approved') {
+            // Accept both 'approved' and 'active' status
+            if (worker.status !== 'approved' && worker.status !== 'active') {
                 await supabase.auth.signOut();
                 throw new Error('Your account status is invalid. Please contact support.');
             }

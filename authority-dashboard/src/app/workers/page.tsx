@@ -158,18 +158,10 @@ export default function WorkersManagementPage() {
 
             <div className="max-w-7xl mx-auto relative z-10">
                 {/* Header */}
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
+                <div className="flex items-center gap-4 mb-8">
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">Worker Management</h1>
                         <p className="text-gray-500 font-medium">Manage and track all sanitation workers</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <Link href="/workers/register">
-                            <button className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/30">
-                                <UserPlus size={20} />
-                                Add Worker
-                            </button>
-                        </Link>
                     </div>
                 </div>
 

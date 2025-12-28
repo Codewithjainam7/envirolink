@@ -66,13 +66,18 @@ export default function WorkersManagementPage() {
 
     const fetchPendingWorkers = async () => {
         try {
+            console.log('Fetching pending workers with status: pending_approval');
             const { data, error } = await supabase
                 .from('workers')
                 .select('*')
                 .eq('status', 'pending_approval')
                 .order('joined_at', { ascending: false });
 
-            if (error) throw error;
+            if (error) {
+                console.error('Error in pending workers query:', error);
+                throw error;
+            }
+            console.log('Fetched pending workers:', data?.length || 0, data);
             setPendingWorkers(data || []);
         } catch (err) {
             console.error('Error fetching pending workers:', err);

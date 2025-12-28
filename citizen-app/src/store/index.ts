@@ -158,6 +158,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         try {
             const supabase = getSupabase();
 
+            console.log('Submitting report:', {
+                category: newReport.category,
+                location: newReport.location,
+                hasImages: newReport.images.length
+            });
+
             // Insert report to Supabase
             const { data: reportData, error: reportError } = await supabase
                 .from('reports')
@@ -166,11 +172,11 @@ export const useAppStore = create<AppState>((set, get) => ({
                     category: newReport.category,
                     severity: 'medium',
                     status: 'submitted',
-                    description: newReport.description,
-                    latitude: newReport.location?.latitude,
-                    longitude: newReport.location?.longitude,
+                    description: newReport.description || 'No description',
+                    latitude: newReport.location?.latitude || 0,
+                    longitude: newReport.location?.longitude || 0,
                     address: newReport.location?.address || 'Unknown location',
-                    locality: newReport.location?.locality,
+                    locality: newReport.location?.locality || 'Unknown',
                     city: newReport.location?.city || 'Mumbai',
                     is_anonymous: newReport.isAnonymous,
                     sla_hours: 24,
@@ -179,54 +185,73 @@ export const useAppStore = create<AppState>((set, get) => ({
                 .select()
                 .single();
 
-            if (reportError) throw reportError;
+            if (reportError) {
+                console.error('Report insert error:', reportError);
+                throw reportError;
+            }
 
-            // Upload images if any
+            console.log('Report created:', reportData);
+
+            // Upload images if any (wrapped in try/catch - don't fail submission if images fail)
             if (newReport.images.length > 0 && reportData) {
-                for (let i = 0; i < newReport.images.length; i++) {
-                    const imageUrl = newReport.images[i];
+                try {
+                    for (let i = 0; i < newReport.images.length; i++) {
+                        const imageUrl = newReport.images[i];
 
-                    // If it's a base64 image, upload to Supabase storage
-                    if (imageUrl.startsWith('data:')) {
-                        const base64Data = imageUrl.split(',')[1];
-                        const fileName = `${(reportData as any).id}/${Date.now()}-${i}.jpg`;
+                        // If it's a base64 image, upload to Supabase storage
+                        if (imageUrl.startsWith('data:')) {
+                            const base64Data = imageUrl.split(',')[1];
+                            const fileName = `${(reportData as any).id}/${Date.now()}-${i}.jpg`;
 
-                        // Convert base64 to Uint8Array (browser-compatible)
-                        const binaryString = atob(base64Data);
-                        const bytes = new Uint8Array(binaryString.length);
-                        for (let j = 0; j < binaryString.length; j++) {
-                            bytes[j] = binaryString.charCodeAt(j);
-                        }
+                            // Convert base64 to Uint8Array (browser-compatible)
+                            const binaryString = atob(base64Data);
+                            const bytes = new Uint8Array(binaryString.length);
+                            for (let j = 0; j < binaryString.length; j++) {
+                                bytes[j] = binaryString.charCodeAt(j);
+                            }
 
-                        const { data: uploadData, error: uploadError } = await supabase.storage
-                            .from('report-images')
-                            .upload(fileName, bytes, {
-                                contentType: 'image/jpeg'
-                            });
+                            console.log('Uploading image to storage:', fileName);
 
-                        if (!uploadError && uploadData) {
-                            const { data: { publicUrl } } = supabase.storage
+                            const { data: uploadData, error: uploadError } = await supabase.storage
                                 .from('report-images')
-                                .getPublicUrl(fileName);
+                                .upload(fileName, bytes, {
+                                    contentType: 'image/jpeg'
+                                });
 
-                            // @ts-ignore - Supabase types not generated
-                            await supabase.from('report_images').insert({
-                                report_id: (reportData as any).id,
-                                url: publicUrl,
-                                storage_path: fileName,
-                            });
+                            if (uploadError) {
+                                console.error('Image upload error:', uploadError);
+                            } else if (uploadData) {
+                                const { data: { publicUrl } } = supabase.storage
+                                    .from('report-images')
+                                    .getPublicUrl(fileName);
+
+                                console.log('Image uploaded, saving to DB:', publicUrl);
+
+                                // @ts-ignore - Supabase types not generated
+                                await supabase.from('report_images').insert({
+                                    report_id: (reportData as any).id,
+                                    url: publicUrl,
+                                    storage_path: fileName,
+                                });
+                            }
                         }
                     }
+                } catch (imgError) {
+                    console.error('Image upload failed (non-fatal):', imgError);
                 }
             }
 
-            // Update user stats if logged in
+            // Update user stats if logged in (non-fatal if fails)
             if (user && !newReport.isAnonymous) {
-                // @ts-ignore - Supabase types not generated
-                await supabase.from('profiles').update({
-                    reports_submitted: (user.engagement?.totalReports || 0) + 1,
-                    points: (user.engagement?.points || 0) + 10
-                }).eq('id', user.id);
+                try {
+                    // @ts-ignore - Supabase types not generated
+                    await supabase.from('profiles').update({
+                        reports_submitted: (user.engagement?.totalReports || 0) + 1,
+                        points: (user.engagement?.points || 0) + 10
+                    }).eq('id', user.id);
+                } catch (profileError) {
+                    console.warn('Profile update failed (non-fatal):', profileError);
+                }
             }
 
             // Refresh reports

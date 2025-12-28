@@ -46,14 +46,18 @@ export default function AIAssignmentPage() {
     const fetchData = async () => {
         setIsLoading(true);
         try {
-            // Fetch pending/submitted reports
+            // Fetch pending/submitted reports - these are reports waiting for assignment
             const { data: reportsData, error: reportsError } = await supabase
                 .from('reports')
-                .select('id, report_id, category, address, locality, latitude, longitude, created_at, severity')
-                .in('status', ['submitted', 'pending'])
+                .select('id, report_id, category, address, locality, latitude, longitude, created_at, severity, status')
+                .eq('status', 'submitted')
                 .order('created_at', { ascending: false });
 
-            if (reportsError) throw reportsError;
+            if (reportsError) {
+                console.error('Error fetching reports:', reportsError);
+                throw reportsError;
+            }
+            console.log('Fetched pending reports:', reportsData?.length || 0);
             setPendingReports(reportsData || []);
 
             // Fetch available workers
@@ -62,7 +66,11 @@ export default function AIAssignmentPage() {
                 .select('id, first_name, last_name, zone, phone, status')
                 .in('status', ['approved', 'active', 'available']);
 
-            if (workersError) throw workersError;
+            if (workersError) {
+                console.error('Error fetching workers:', workersError);
+                throw workersError;
+            }
+            console.log('Fetched available workers:', workersData?.length || 0);
             setAvailableWorkers(workersData || []);
         } catch (error) {
             console.error('Error fetching data:', error);

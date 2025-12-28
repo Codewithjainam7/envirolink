@@ -191,9 +191,16 @@ export const useAppStore = create<AppState>((set, get) => ({
                         const base64Data = imageUrl.split(',')[1];
                         const fileName = `${(reportData as any).id}/${Date.now()}-${i}.jpg`;
 
+                        // Convert base64 to Uint8Array (browser-compatible)
+                        const binaryString = atob(base64Data);
+                        const bytes = new Uint8Array(binaryString.length);
+                        for (let j = 0; j < binaryString.length; j++) {
+                            bytes[j] = binaryString.charCodeAt(j);
+                        }
+
                         const { data: uploadData, error: uploadError } = await supabase.storage
                             .from('report-images')
-                            .upload(fileName, Buffer.from(base64Data, 'base64'), {
+                            .upload(fileName, bytes, {
                                 contentType: 'image/jpeg'
                             });
 

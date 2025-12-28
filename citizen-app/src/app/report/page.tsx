@@ -39,7 +39,7 @@ const STEPS = ['Photos', 'Category', 'Details', 'Location', 'Review'];
 export default function ReportPage() {
     const router = useRouter();
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { reports, setReports, user } = useAppStore();
+    const { reports, setReports, user, updateNewReport, submitReport, resetNewReport, fetchReports } = useAppStore();
 
     const [currentStep, setCurrentStep] = useState(0);
     const [images, setImages] = useState<File[]>([]);
@@ -210,21 +210,50 @@ export default function ReportPage() {
         if (!location || !category || !images.length) { toast.error('Complete all fields'); return; }
         setIsSubmitting(true);
         try {
-            const newReport: Report = {
-                id: `${Date.now()}`, reportId: `RPT-${Date.now()}`,
-                location: { latitude: location.lat, longitude: location.lng, address: location.address },
-                images: imagePreviews.map((url, i) => ({ id: `img-${i}`, url, thumbnailUrl: url, uploadedAt: new Date().toISOString() })),
-                category: category as WasteCategory, severity: severity as 'low' | 'medium' | 'high' | 'critical',
-                estimatedVolume: 'medium', description: description || 'No description',
-                reporterId: isAnonymous ? undefined : user?.id, isAnonymous, status: 'submitted',
-                statusHistory: [{ status: 'submitted', timestamp: new Date().toISOString() }],
-                createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-            };
-            setReports([newReport, ...reports]);
-            await new Promise(r => setTimeout(r, 1500));
-            toast.success('Report submitted!');
+            // Convert images to base64 for Supabase storage
+            const base64Images = await Promise.all(
+                images.map(file => new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                }))
+            );
+
+            // Extract locality from address
+            const addressParts = location.address.split(',');
+            const locality = addressParts[0]?.trim() || 'Unknown';
+
+            // Update store's newReport state with all form data
+            updateNewReport({
+                images: base64Images,
+                location: {
+                    latitude: location.lat,
+                    longitude: location.lng,
+                    address: location.address,
+                    locality: locality,
+                    city: 'Mumbai'
+                },
+                category: category as WasteCategory,
+                description: description || 'No description provided',
+                isAnonymous
+            });
+
+            // Submit to Supabase using the store's method
+            await submitReport();
+
+            // Refresh reports to update the UI
+            await fetchReports();
+
+            // Reset form state
+            resetNewReport();
+
+            toast.success('Report submitted successfully!');
             router.push('/home');
-        } catch { toast.error('Failed'); }
+        } catch (err) {
+            console.error('Submit error:', err);
+            toast.error('Failed to submit report. Please try again.');
+        }
         finally { setIsSubmitting(false); }
     };
 

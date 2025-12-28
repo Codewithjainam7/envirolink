@@ -610,7 +610,7 @@ export default function HomePage() {
                                 </div>
 
                                 <a
-                                    href="http://localhost:3002/register"
+                                    href="https://envirolink-worker.vercel.app/register"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >

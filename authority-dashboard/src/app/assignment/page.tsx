@@ -1,54 +1,151 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
     Sparkles, Zap, UserPlus, Loader2, CheckCircle, AlertTriangle,
     MapPin, Clock, User, ArrowRight, RefreshCw, Bot
 } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
+import { createClient } from '@/lib/supabase';
 
-// Mock reports waiting for assignment
-const PENDING_REPORTS = [
-    { id: 'RPT-0156', type: 'Illegal Dumping', location: 'Lokhandwala Complex', lat: 19.13, lng: 72.83, reportedAt: '5 mins ago', severity: 'high' },
-    { id: 'RPT-0157', type: 'Overflowing Bin', location: 'Link Road Junction', lat: 19.12, lng: 72.85, reportedAt: '12 mins ago', severity: 'medium' },
-    { id: 'RPT-0158', type: 'Littering', location: 'Oshiwara Garden', lat: 19.14, lng: 72.84, reportedAt: '18 mins ago', severity: 'low' },
-];
+interface PendingReport {
+    id: string;
+    report_id: string;
+    category: string;
+    address: string;
+    locality: string;
+    latitude: number;
+    longitude: number;
+    created_at: string;
+    severity: string;
+}
 
-// Mock available workers
-const AVAILABLE_WORKERS = [
-    { id: 'WK-001', name: 'Suresh Patil', zone: 'Zone 3', rating: 4.8, distance: '0.5 km', status: 'available' },
-    { id: 'WK-002', name: 'Ramesh Kumar', zone: 'Zone 3', rating: 4.5, distance: '0.8 km', status: 'available' },
-    { id: 'WK-003', name: 'Anil Sharma', zone: 'Zone 3', rating: 4.9, distance: '1.2 km', status: 'available' },
-];
+interface AvailableWorker {
+    id: string;
+    first_name: string;
+    last_name: string;
+    zone: string;
+    phone: string;
+    status: string;
+}
 
 export default function AIAssignmentPage() {
-    const [pendingReports, setPendingReports] = useState(PENDING_REPORTS);
+    const supabase = createClient();
+    const [pendingReports, setPendingReports] = useState<PendingReport[]>([]);
+    const [availableWorkers, setAvailableWorkers] = useState<AvailableWorker[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isAutoAssigning, setIsAutoAssigning] = useState(false);
     const [assignedCount, setAssignedCount] = useState(0);
     const [selectedReport, setSelectedReport] = useState<string | null>(null);
 
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            // Fetch pending/submitted reports
+            const { data: reportsData, error: reportsError } = await supabase
+                .from('reports')
+                .select('id, report_id, category, address, locality, latitude, longitude, created_at, severity')
+                .in('status', ['submitted', 'pending'])
+                .order('created_at', { ascending: false });
+
+            if (reportsError) throw reportsError;
+            setPendingReports(reportsData || []);
+
+            // Fetch available workers
+            const { data: workersData, error: workersError } = await supabase
+                .from('workers')
+                .select('id, first_name, last_name, zone, phone, status')
+                .in('status', ['approved', 'active', 'available']);
+
+            if (workersError) throw workersError;
+            setAvailableWorkers(workersData || []);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const formatTimeAgo = (dateString: string) => {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins} mins ago`;
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return `${diffHours} hours ago`;
+        const diffDays = Math.floor(diffHours / 24);
+        return `${diffDays} days ago`;
+    };
+
     // AI Auto-assign all pending reports
     const handleAutoAssignAll = async () => {
+        if (pendingReports.length === 0 || availableWorkers.length === 0) return;
+
         setIsAutoAssigning(true);
-
-        // Simulate AI processing
-        for (let i = 0; i < pendingReports.length; i++) {
-            await new Promise(r => setTimeout(r, 1000));
-            setAssignedCount(prev => prev + 1);
-        }
-
-        setPendingReports([]);
-        setIsAutoAssigning(false);
         setAssignedCount(0);
+
+        try {
+            for (let i = 0; i < pendingReports.length; i++) {
+                const report = pendingReports[i];
+                const worker = availableWorkers[i % availableWorkers.length]; // Round-robin assignment
+
+                await supabase
+                    .from('reports')
+                    .update({
+                        status: 'assigned',
+                        assigned_worker_id: worker.id,
+                        assigned_worker_name: `${worker.first_name} ${worker.last_name}`
+                    })
+                    .eq('id', report.id);
+
+                setAssignedCount(i + 1);
+                await new Promise(r => setTimeout(r, 500)); // Small delay for visual feedback
+            }
+
+            // Refresh data
+            await fetchData();
+        } catch (error) {
+            console.error('Error auto-assigning:', error);
+        } finally {
+            setIsAutoAssigning(false);
+            setAssignedCount(0);
+        }
     };
 
     // Manual assignment
-    const handleManualAssign = (reportId: string, workerId: string) => {
-        setPendingReports(prev => prev.filter(r => r.id !== reportId));
-        setSelectedReport(null);
-        // Show toast in real implementation
+    const handleManualAssign = async (reportId: string, worker: AvailableWorker) => {
+        try {
+            await supabase
+                .from('reports')
+                .update({
+                    status: 'assigned',
+                    assigned_worker_id: worker.id,
+                    assigned_worker_name: `${worker.first_name} ${worker.last_name}`
+                })
+                .eq('id', reportId);
+
+            setPendingReports(prev => prev.filter(r => r.id !== reportId));
+            setSelectedReport(null);
+        } catch (error) {
+            console.error('Error assigning:', error);
+        }
     };
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen relative pb-8">
@@ -71,13 +168,13 @@ export default function AIAssignmentPage() {
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={handleAutoAssignAll}
-                        disabled={isAutoAssigning || pendingReports.length === 0}
+                        disabled={isAutoAssigning || pendingReports.length === 0 || availableWorkers.length === 0}
                         className="flex items-center gap-3 px-8 py-4 bg-emerald-50 text-emerald-700 font-semibold rounded-2xl transition-all border-2 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-50 shadow-sm"
                     >
                         {isAutoAssigning ? (
                             <>
                                 <Loader2 size={22} className="animate-spin" />
-                                Assigning... ({assignedCount}/{PENDING_REPORTS.length})
+                                Assigning... ({assignedCount}/{pendingReports.length})
                             </>
                         ) : (
                             <>
@@ -100,11 +197,11 @@ export default function AIAssignmentPage() {
                             <p className="text-emerald-100 font-medium">Pending Reports</p>
                         </div>
                         <div className="text-center p-2">
-                            <p className="text-4xl font-bold mb-1">{AVAILABLE_WORKERS.length}</p>
+                            <p className="text-4xl font-bold mb-1">{availableWorkers.length}</p>
                             <p className="text-emerald-100 font-medium">Available Workers</p>
                         </div>
                         <div className="text-center p-2">
-                            <p className="text-4xl font-bold mb-1">2.3 km</p>
+                            <p className="text-4xl font-bold mb-1">-</p>
                             <p className="text-emerald-100 font-medium">Avg. Distance</p>
                         </div>
                         <div className="text-center p-2">
@@ -151,19 +248,19 @@ export default function AIAssignmentPage() {
                                                         report.severity === 'medium' ? 'bg-amber-100 text-amber-700' :
                                                             'bg-emerald-100 text-emerald-700'
                                                         }`}>
-                                                        {report.severity.toUpperCase()}
+                                                        {(report.severity || 'medium').toUpperCase()}
                                                     </span>
-                                                    <span className="text-gray-400 text-sm font-mono">{report.id}</span>
+                                                    <span className="text-gray-400 text-sm font-mono">{report.report_id}</span>
                                                 </div>
-                                                <h3 className="font-bold text-gray-900 text-lg">{report.type}</h3>
+                                                <h3 className="font-bold text-gray-900 text-lg">{report.category?.replace(/_/g, ' ') || 'Waste Report'}</h3>
                                                 <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 font-medium">
                                                     <span className="flex items-center gap-1">
                                                         <MapPin size={14} className="text-emerald-500" />
-                                                        {report.location}
+                                                        {report.locality || report.address?.slice(0, 30) || 'Unknown location'}
                                                     </span>
                                                     <span className="flex items-center gap-1">
                                                         <Clock size={14} className="text-emerald-500" />
-                                                        {report.reportedAt}
+                                                        {formatTimeAgo(report.created_at)}
                                                     </span>
                                                 </div>
                                             </div>
@@ -180,7 +277,7 @@ export default function AIAssignmentPage() {
                                         </div>
 
                                         {/* Worker Selection (when expanded) */}
-                                        {selectedReport === report.id && (
+                                        {selectedReport === report.id && availableWorkers.length > 0 && (
                                             <motion.div
                                                 initial={{ opacity: 0, height: 0 }}
                                                 animate={{ opacity: 1, height: 'auto' }}
@@ -188,21 +285,21 @@ export default function AIAssignmentPage() {
                                             >
                                                 <p className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
                                                     <Zap size={14} className="text-emerald-500" />
-                                                    Suggested Workers
+                                                    Available Workers
                                                 </p>
                                                 <div className="space-y-2">
-                                                    {AVAILABLE_WORKERS.map(worker => (
+                                                    {availableWorkers.slice(0, 5).map(worker => (
                                                         <button
                                                             key={worker.id}
-                                                            onClick={() => handleManualAssign(report.id, worker.id)}
+                                                            onClick={() => handleManualAssign(report.id, worker)}
                                                             className="w-full flex items-center gap-3 p-3 bg-gray-50/80 rounded-xl hover:bg-emerald-50 border border-transparent hover:border-emerald-200 transition-all group"
                                                         >
                                                             <div className="w-10 h-10 bg-white border border-gray-200 rounded-xl flex items-center justify-center font-bold text-emerald-600 shadow-sm group-hover:scale-105 transition-transform">
-                                                                {worker.name.split(' ').map(n => n[0]).join('')}
+                                                                {worker.first_name[0]}{worker.last_name?.[0] || ''}
                                                             </div>
                                                             <div className="flex-1 text-left">
-                                                                <p className="font-bold text-gray-900">{worker.name}</p>
-                                                                <p className="text-xs font-semibold text-gray-500">{worker.distance} away • ⭐ {worker.rating}</p>
+                                                                <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
+                                                                <p className="text-xs font-semibold text-gray-500">{worker.zone || 'Unassigned'} • {worker.phone || 'No phone'}</p>
                                                             </div>
                                                             <ArrowRight size={18} className="text-gray-300 group-hover:text-emerald-500 transition-colors" />
                                                         </button>
@@ -216,30 +313,30 @@ export default function AIAssignmentPage() {
                         )}
                     </div>
 
-                    {/* Worker Assignments & Rejections */}
+                    {/* Recent Assignments & Settings */}
                     <div>
                         <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                             <RefreshCw className="text-emerald-500" size={20} />
-                            Recent Assignments
+                            Assignment Settings
                         </h2>
 
                         <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border-2 border-emerald-50 overflow-hidden">
                             <div className="p-6 border-b border-gray-100">
-                                <h3 className="font-bold text-gray-900 mb-4">Assignment Settings</h3>
+                                <h3 className="font-bold text-gray-900 mb-4">Configuration</h3>
                                 <div className="space-y-4">
                                     <div className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 transition-colors">
                                         <div>
                                             <p className="font-semibold text-gray-900">Auto-assign on submit</p>
                                             <p className="text-sm text-gray-500">Automatically assign when report is submitted</p>
                                         </div>
-                                        <button className="w-12 h-6 bg-emerald-500 rounded-full relative cursor-pointer shadow-inner">
-                                            <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
+                                        <button className="w-12 h-6 bg-gray-300 rounded-full relative cursor-pointer shadow-inner">
+                                            <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
                                         </button>
                                     </div>
                                     <div className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 transition-colors">
                                         <div>
-                                            <p className="font-semibold text-gray-900">Allow worker rejection</p>
-                                            <p className="text-sm text-gray-500">Workers can decline assignments with warning</p>
+                                            <p className="font-semibold text-gray-900">Worker proximity</p>
+                                            <p className="text-sm text-gray-500">Assign to nearest worker by default</p>
                                         </div>
                                         <button className="w-12 h-6 bg-emerald-500 rounded-full relative cursor-pointer shadow-inner">
                                             <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
@@ -249,21 +346,27 @@ export default function AIAssignmentPage() {
                             </div>
 
                             <div className="p-6">
-                                <h3 className="font-bold text-gray-900 mb-4">Rejection Warnings</h3>
-                                <div className="space-y-3">
-                                    <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
-                                        <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
-                                            <AlertTriangle size={20} className="text-amber-600" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <p className="font-bold text-gray-900">Vijay Singh</p>
-                                            <p className="text-sm font-medium text-amber-600">2 rejections this week</p>
-                                        </div>
-                                        <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
-                                            Warning Sent
-                                        </span>
+                                <h3 className="font-bold text-gray-900 mb-4">Available Workers ({availableWorkers.length})</h3>
+                                {availableWorkers.length === 0 ? (
+                                    <p className="text-gray-500 text-center py-4">No workers available</p>
+                                ) : (
+                                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                                        {availableWorkers.map(worker => (
+                                            <div key={worker.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                                <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center font-bold text-emerald-700">
+                                                    {worker.first_name[0]}{worker.last_name?.[0] || ''}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
+                                                    <p className="text-sm text-gray-500">{worker.zone || 'No zone'}</p>
+                                                </div>
+                                                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                                                    {worker.status}
+                                                </span>
+                                            </div>
+                                        ))}
                                     </div>
-                                </div>
+                                )}
                             </div>
                         </div>
                     </div>

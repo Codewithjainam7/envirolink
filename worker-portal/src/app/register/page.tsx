@@ -133,6 +133,7 @@ export default function RegisterPage() {
         setError(null);
 
         try {
+            // First create the auth user
             const { data: authData, error: authError } = await supabase.auth.signUp({
                 email: formData.email,
                 password: formData.password,
@@ -150,25 +151,31 @@ export default function RegisterPage() {
 
             if (authData.user) {
                 // Insert into workers table with pending_approval status
-                try {
-                    await supabase
-                        .from('workers')
-                        .insert([{
-                            id: authData.user.id,
-                            first_name: formData.firstName,
-                            last_name: formData.lastName,
-                            email: formData.email,
-                            phone: formData.phone,
-                            address: formData.address,
-                            zone: formData.zone,
-                            experience: formData.experience,
-                            vehicle_type: formData.vehicleType,
-                            status: 'pending_approval',
-                            joined_at: new Date().toISOString(),
-                        }]);
-                } catch (insertError) {
-                    console.log('Worker profile will be created on approval');
+                console.log('Inserting worker into database with user id:', authData.user.id);
+
+                const { data: workerData, error: workerError } = await supabase
+                    .from('workers')
+                    .insert([{
+                        id: authData.user.id,
+                        first_name: formData.firstName,
+                        last_name: formData.lastName,
+                        email: formData.email,
+                        phone: formData.phone,
+                        address: formData.address,
+                        zone: formData.zone,
+                        experience: formData.experience,
+                        vehicle_type: formData.vehicleType,
+                        status: 'pending_approval',
+                        joined_at: new Date().toISOString(),
+                    }])
+                    .select();
+
+                if (workerError) {
+                    console.error('Failed to insert worker:', workerError);
+                    throw new Error(`Failed to create worker profile: ${workerError.message}`);
                 }
+
+                console.log('Worker profile created successfully:', workerData);
             }
 
             setStep(4);

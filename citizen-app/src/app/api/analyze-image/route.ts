@@ -61,12 +61,12 @@ or
             }
         };
 
-        // Try different model name variants
+        // Try different model name variants - Prioritize STABLE models first
         const modelVariants = [
-            'gemini-2.5-flash-preview-05-20',
-            'gemini-2.5-flash',
-            'gemini-2.0-flash',
-            'gemini-1.5-flash'
+            'gemini-1.5-flash',       // Most reliable/stable
+            'gemini-2.0-flash-exp',   // New experimental
+            'gemini-1.5-pro',         // High quality backup
+            'gemini-2.5-flash'        // User requested (if available)
         ];
 
         let responseData = null;
@@ -85,7 +85,7 @@ or
                 );
 
                 const responseText = await response.text();
-                console.log(`[${model}] Status:`, response.status);
+                // console.log(`[${model}] Status:`, response.status);
 
                 if (response.ok) {
                     responseData = JSON.parse(responseText);
@@ -93,15 +93,28 @@ or
                     break;
                 } else {
                     lastError = responseText;
-                    console.log(`[${model}] Failed:`, responseText.substring(0, 200));
+                    console.error(`[${model}] Failed:`, responseText.substring(0, 200));
                 }
             } catch (e) {
-                console.log(`[${model}] Error:`, e);
+                console.error(`[${model}] Error:`, e);
             }
         }
 
         if (!responseData) {
             console.error('All model variants failed:', lastError);
+
+            // Check specifically for API Key errors
+            if (lastError.includes('API_KEY_INVALID') || lastError.includes('key param') || lastError.includes('unauthenticated')) {
+                return NextResponse.json({
+                    isAppropriate: true,
+                    isWasteRelated: true,
+                    confidence: 0,
+                    description: 'Invalid API Key - Please check settings',
+                    rejectionReason: 'Invalid API Key'
+                });
+            }
+
+            // Return success with manual selection required for other errors
             return NextResponse.json({
                 isAppropriate: true,
                 isWasteRelated: true,

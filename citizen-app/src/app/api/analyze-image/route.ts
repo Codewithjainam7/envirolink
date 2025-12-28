@@ -74,37 +74,58 @@ You must return ONLY a raw JSON object. Do not include markdown formatting (like
 }
         `;
 
-        // 4. CALL GEMINI API
-        // Using gemini-2.0-flash-exp as the latest "Flash" model (often referred to as 'Flash 2.5' or 'Next Gen')
-        // We will fallback to 1.5-flash if 2.0 fails for reliability.
+        // 4. CALL GEMINI API - With fallback logic
+        const models = ['gemini-2.5-flash', 'gemini-2.0-flash-exp'];
+        let apiResponse = null;
+        let usedModel = '';
 
-        const MODEL_NAME = 'gemini-1.5-flash'; // Using 1.5-flash as PRIMARY STABLE model to fix errors
-        // Note: 'gemini-2.5-flash' does not exist publicly yet. 1.5-flash is the current stable flash.
-        // We will adhere to robustness first.
+        for (const model of models) {
+            try {
+                console.log(`Sending request to Google Gemini API (Model: ${model})...`);
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { text: PROMPT_TEXT },
+                                    { inline_data: { mime_type: "image/jpeg", data: base64Data } }
+                                ]
+                            }],
+                            generationConfig: {
+                                temperature: 0.2,
+                                maxOutputTokens: 65536, // Higher token limit for 2.5
+                                topP: 0.95,
+                                topK: 64,
+                                thinking: model.includes('2.5') // Enable thinking for 2.5
+                            }
+                        })
+                    }
+                );
 
-        console.log(`Sending request to Google Gemini API (Model: ${MODEL_NAME})...`);
-
-        const requestPayload = {
-            contents: [{
-                parts: [
-                    { text: PROMPT_TEXT },
-                    { inline_data: { mime_type: "image/jpeg", data: base64Data } }
-                ]
-            }],
-            generationConfig: {
-                temperature: 0.2, // Low temperature for factual, consistent JSON
-                maxOutputTokens: 500
+                if (response.ok) {
+                    apiResponse = response;
+                    usedModel = model;
+                    break;
+                } else {
+                    const errText = await response.text();
+                    console.warn(`Model ${model} failed:`, errText);
+                    // Specific check for invalid key to stop fallback immediately
+                    if (response.status === 400 && errText.includes('API_KEY_INVALID')) {
+                        apiResponse = response; // Propagate the specific error
+                        break;
+                    }
+                }
+            } catch (e) {
+                console.warn(`Model ${model} network/fetch error:`, e);
             }
-        };
+        }
 
-        const apiResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestPayload)
-            }
-        );
+        if (!apiResponse) {
+            throw new Error('All Gemini models failed to respond.');
+        }
 
         const responseText = await apiResponse.text();
         console.log('Gemini API Response Status:', apiResponse.status);

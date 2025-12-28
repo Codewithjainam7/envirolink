@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    // Try both env var names
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
     if (!GEMINI_API_KEY) {
-        console.error('GEMINI_API_KEY not configured');
+        console.error('GEMINI_API_KEY not configured - check your .env.local file');
         return NextResponse.json({
             error: 'API not configured',
-            isWasteRelated: false,
-            rejectionReason: 'Image analysis not available'
-        }, { status: 500 });
+            isWasteRelated: true,
+            isAppropriate: true,
+            topCategories: ['littering', 'illegal_dumping', 'organic_waste', 'overflowing_bin'],
+            confidence: 50,
+            description: 'AI unavailable - please select category',
+            rejectionReason: ''
+        });
     }
 
     try {
@@ -56,21 +61,47 @@ or
             }
         };
 
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
+        // Try different model name variants
+        const modelVariants = [
+            'gemini-2.5-flash-preview-05-20',
+            'gemini-2.5-flash',
+            'gemini-2.0-flash',
+            'gemini-1.5-flash'
+        ];
+
+        let responseData = null;
+        let lastError = '';
+
+        for (const model of modelVariants) {
+            try {
+                console.log(`Trying model: ${model}`);
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody)
+                    }
+                );
+
+                const responseText = await response.text();
+                console.log(`[${model}] Status:`, response.status);
+
+                if (response.ok) {
+                    responseData = JSON.parse(responseText);
+                    console.log(`[${model}] Success!`);
+                    break;
+                } else {
+                    lastError = responseText;
+                    console.log(`[${model}] Failed:`, responseText.substring(0, 200));
+                }
+            } catch (e) {
+                console.log(`[${model}] Error:`, e);
             }
-        );
+        }
 
-        const responseText = await response.text();
-        console.log('API Status:', response.status);
-        console.log('API Response:', responseText.substring(0, 500));
-
-        if (!response.ok) {
-            console.error('API Error:', responseText);
+        if (!responseData) {
+            console.error('All model variants failed:', lastError);
             return NextResponse.json({
                 isAppropriate: true,
                 isWasteRelated: true,
@@ -80,8 +111,6 @@ or
                 rejectionReason: ''
             });
         }
-
-        const responseData = JSON.parse(responseText);
 
         const aiText = responseData.candidates?.[0]?.content?.parts?.[0]?.text || '';
         console.log('AI Response:', aiText);

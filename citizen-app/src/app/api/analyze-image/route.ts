@@ -27,19 +27,20 @@ export async function POST(request: NextRequest) {
             contents: [{
                 parts: [
                     {
-                        text: `You are a waste detection AI. Look at this image and tell me:
-1. Is this image showing garbage, waste, litter, or environmental pollution? Answer true or false.
-2. If yes, what type? Choose from: littering, illegal_dumping, overflowing_bin, construction_debris, e_waste, organic_waste, sewage_overflow, burning_waste, hazardous_material
-3. Give me a short description.
+                        text: `You are a waste detection AI. Analyze this image and respond ONLY with valid JSON.
 
-IMPORTANT: 
-- Screenshots, selfies, food photos, indoor rooms = NOT waste (false)
-- Garbage on streets, overflowing bins, littered areas = IS waste (true)
+Is this image showing garbage, waste, litter, or environmental pollution?
 
-Reply ONLY with this JSON format:
-{"waste": true, "categories": ["littering", "illegal_dumping"], "description": "Garbage on road"}
+Categories to choose from: littering, illegal_dumping, overflowing_bin, construction_debris, e_waste, organic_waste, sewage_overflow, burning_waste, hazardous_material
+
+IMPORTANT:
+- Screenshots, selfies, food photos = NOT waste
+- Garbage on streets, overflowing bins, littered areas = IS waste
+
+Reply with JSON only:
+{"waste": true, "categories": ["littering"], "description": "Brief description"}
 or
-{"waste": false, "reason": "This is a screenshot"}`
+{"waste": false, "reason": "Why not waste"}`
                     },
                     {
                         inline_data: {
@@ -48,53 +49,74 @@ or
                         }
                     }
                 ]
-            }]
+            }],
+            generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: 256
+            }
         };
 
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
+        // Try gemini-1.5-flash first (more stable), fallback to 2.0
+        const models = ['gemini-1.5-flash', 'gemini-2.0-flash-exp'];
+        let responseData = null;
+        let lastError = '';
+
+        for (const model of models) {
+            try {
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody)
+                    }
+                );
+
+                const responseText = await response.text();
+                console.log(`[${model}] Status:`, response.status);
+
+                if (response.ok) {
+                    responseData = JSON.parse(responseText);
+                    console.log(`[${model}] Success`);
+                    break;
+                } else {
+                    lastError = responseText;
+                    console.log(`[${model}] Failed:`, responseText.substring(0, 200));
+                }
+            } catch (e) {
+                console.log(`[${model}] Error:`, e);
             }
-        );
+        }
 
-        const responseText = await response.text();
-        console.log('API Status:', response.status);
-        console.log('API Response:', responseText);
-
-        if (!response.ok) {
-            console.error('API Error:', responseText);
-            // Allow through on API error
+        if (!responseData) {
+            console.error('All models failed:', lastError);
+            // Return success with manual selection required
             return NextResponse.json({
                 isAppropriate: true,
                 isWasteRelated: true,
                 topCategories: ['littering', 'illegal_dumping', 'organic_waste', 'overflowing_bin'],
-                confidence: 70,
-                description: 'API error - please select category',
+                confidence: 60,
+                description: 'Please select the appropriate category',
                 rejectionReason: ''
             });
         }
 
-        const data = JSON.parse(responseText);
-        const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        console.log('AI Text:', aiText);
+        const aiText = responseData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        console.log('AI Response:', aiText);
 
         if (!aiText) {
             return NextResponse.json({
                 isAppropriate: true,
                 isWasteRelated: true,
                 topCategories: ['littering', 'illegal_dumping', 'organic_waste', 'overflowing_bin'],
-                confidence: 70,
-                description: 'No AI response - select category',
+                confidence: 60,
+                description: 'Please select category',
                 rejectionReason: ''
             });
         }
 
         // Parse the AI response
         try {
-            // Extract JSON from response
             const jsonMatch = aiText.match(/\{[\s\S]*\}/);
             if (!jsonMatch) throw new Error('No JSON found');
 
@@ -110,8 +132,7 @@ or
                 rejectionReason: !isWaste ? (result.reason || 'Not a waste image') : ''
             });
         } catch (e) {
-            console.log('Parse failed, checking text content');
-            // Fallback: check if response mentions waste-related keywords
+            console.log('Parse failed, checking keywords');
             const lowerText = aiText.toLowerCase();
             const isWaste = lowerText.includes('"waste": true') ||
                 lowerText.includes('"waste":true') ||
@@ -135,8 +156,8 @@ or
             isAppropriate: true,
             isWasteRelated: true,
             topCategories: ['littering', 'illegal_dumping', 'organic_waste', 'overflowing_bin'],
-            confidence: 70,
-            description: 'Error occurred - select category',
+            confidence: 60,
+            description: 'Please select category',
             rejectionReason: ''
         });
     }

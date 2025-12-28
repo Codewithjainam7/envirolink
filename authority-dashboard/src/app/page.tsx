@@ -460,10 +460,7 @@ export default function DashboardPage() {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <span className="p-1.5 rounded-lg bg-gray-100 text-gray-600">
-                          {(() => {
-                            const IconComponent = { Trash2, Package, Recycle, Construction, Cpu, Leaf, AlertTriangle }[category.icon as keyof typeof { Trash2: typeof Trash2, Package: typeof Package, Recycle: typeof Recycle, Construction: typeof Construction, Cpu: typeof Cpu, Leaf: typeof Leaf, AlertTriangle: typeof AlertTriangle }] || Trash2;
-                          return <IconComponent size={16} style={{ color: category.color }} />;
-                          })()}
+                          <Trash2 size={16} style={{ color: category.color }} />
                         </span>
                         <span className="text-gray-700">{category.label}</span>
                       </div>

@@ -184,114 +184,114 @@ export const useAppStore = create<AppState>((set, get) => ({
                 set({ isLoading: false });
                 throw new Error('RATE_LIMIT: You have reached the maximum of 10 reports per day. Please try again tomorrow.');
             }
-        }
+
 
 
             // Insert report to Supabase
             const { data: reportData, error: reportError } = await supabase
-            .from('reports')
-            .insert({
-                user_id: newReport.isAnonymous ? null : user?.id,
-                category: newReport.category,
-                severity: 'medium',
-                status: 'submitted',
-                description: newReport.description || 'No description',
-                latitude: newReport.location?.latitude || 0,
-                longitude: newReport.location?.longitude || 0,
-                address: newReport.location?.address || 'Unknown location',
-                locality: newReport.location?.locality || 'Unknown',
-                city: newReport.location?.city || 'Mumbai',
-                is_anonymous: newReport.isAnonymous,
-                sla_hours: 24,
-                sla_due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-            } as any)
-            .select()
-            .single();
+                .from('reports')
+                .insert({
+                    user_id: newReport.isAnonymous ? null : user?.id,
+                    category: newReport.category,
+                    severity: 'medium',
+                    status: 'submitted',
+                    description: newReport.description || 'No description',
+                    latitude: newReport.location?.latitude || 0,
+                    longitude: newReport.location?.longitude || 0,
+                    address: newReport.location?.address || 'Unknown location',
+                    locality: newReport.location?.locality || 'Unknown',
+                    city: newReport.location?.city || 'Mumbai',
+                    is_anonymous: newReport.isAnonymous,
+                    sla_hours: 24,
+                    sla_due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                } as any)
+                .select()
+                .single();
 
-        if (reportError) {
-            console.error('Report insert error:', reportError);
-            throw reportError;
-        }
+            if (reportError) {
+                console.error('Report insert error:', reportError);
+                throw reportError;
+            }
 
-        console.log('Report created:', reportData);
+            console.log('Report created:', reportData);
 
-        // Upload images if any (wrapped in try/catch - don't fail submission if images fail)
-        if (newReport.images.length > 0 && reportData) {
-            try {
-                for (let i = 0; i < newReport.images.length; i++) {
-                    const imageUrl = newReport.images[i];
+            // Upload images if any (wrapped in try/catch - don't fail submission if images fail)
+            if (newReport.images.length > 0 && reportData) {
+                try {
+                    for (let i = 0; i < newReport.images.length; i++) {
+                        const imageUrl = newReport.images[i];
 
-                    // If it's a base64 image, upload to Supabase storage
-                    if (imageUrl.startsWith('data:')) {
-                        const base64Data = imageUrl.split(',')[1];
-                        const fileName = `${(reportData as any).id}/${Date.now()}-${i}.jpg`;
+                        // If it's a base64 image, upload to Supabase storage
+                        if (imageUrl.startsWith('data:')) {
+                            const base64Data = imageUrl.split(',')[1];
+                            const fileName = `${(reportData as any).id}/${Date.now()}-${i}.jpg`;
 
-                        // Convert base64 to Uint8Array (browser-compatible)
-                        const binaryString = atob(base64Data);
-                        const bytes = new Uint8Array(binaryString.length);
-                        for (let j = 0; j < binaryString.length; j++) {
-                            bytes[j] = binaryString.charCodeAt(j);
-                        }
+                            // Convert base64 to Uint8Array (browser-compatible)
+                            const binaryString = atob(base64Data);
+                            const bytes = new Uint8Array(binaryString.length);
+                            for (let j = 0; j < binaryString.length; j++) {
+                                bytes[j] = binaryString.charCodeAt(j);
+                            }
 
-                        console.log('Uploading image to storage:', fileName);
+                            console.log('Uploading image to storage:', fileName);
 
-                        const { data: uploadData, error: uploadError } = await supabase.storage
-                            .from('report-images')
-                            .upload(fileName, bytes, {
-                                contentType: 'image/jpeg'
-                            });
-
-                        if (uploadError) {
-                            console.error('Image upload error:', uploadError);
-                        } else if (uploadData) {
-                            const { data: { publicUrl } } = supabase.storage
+                            const { data: uploadData, error: uploadError } = await supabase.storage
                                 .from('report-images')
-                                .getPublicUrl(fileName);
+                                .upload(fileName, bytes, {
+                                    contentType: 'image/jpeg'
+                                });
 
-                            console.log('Image uploaded, saving to DB:', publicUrl);
+                            if (uploadError) {
+                                console.error('Image upload error:', uploadError);
+                            } else if (uploadData) {
+                                const { data: { publicUrl } } = supabase.storage
+                                    .from('report-images')
+                                    .getPublicUrl(fileName);
 
-                            // @ts-ignore - Supabase types not generated
-                            await supabase.from('report_images').insert({
-                                report_id: (reportData as any).id,
-                                url: publicUrl,
-                                storage_path: fileName,
-                            });
+                                console.log('Image uploaded, saving to DB:', publicUrl);
+
+                                // @ts-ignore - Supabase types not generated
+                                await supabase.from('report_images').insert({
+                                    report_id: (reportData as any).id,
+                                    url: publicUrl,
+                                    storage_path: fileName,
+                                });
+                            }
                         }
                     }
+                } catch (imgError) {
+                    console.error('Image upload failed (non-fatal):', imgError);
                 }
-            } catch (imgError) {
-                console.error('Image upload failed (non-fatal):', imgError);
             }
-        }
 
-        // Update user stats if logged in (non-fatal if fails) - Award 50 points per report
-        if (user && !newReport.isAnonymous) {
-            try {
-                // @ts-ignore - Supabase types not generated
-                await supabase.from('profiles').update({
-                    reports_submitted: (user.engagement?.totalReports || 0) + 1,
-                    points: (user.engagement?.points || 0) + 50  // 50 points per valid report
-                }).eq('id', user.id);
-            } catch (profileError) {
-                console.warn('Profile update failed (non-fatal):', profileError);
+            // Update user stats if logged in (non-fatal if fails) - Award 50 points per report
+            if (user && !newReport.isAnonymous) {
+                try {
+                    // @ts-ignore - Supabase types not generated
+                    await supabase.from('profiles').update({
+                        reports_submitted: (user.engagement?.totalReports || 0) + 1,
+                        points: (user.engagement?.points || 0) + 50  // 50 points per valid report
+                    }).eq('id', user.id);
+                } catch (profileError) {
+                    console.warn('Profile update failed (non-fatal):', profileError);
+                }
             }
+
+            // Refresh reports
+            await get().fetchReports();
+
+            set({
+                newReport: initialNewReport,
+                isReportSheetOpen: false,
+                isLoading: false,
+            });
+
+        } catch (error) {
+            console.error('Failed to submit report:', error);
+            set({ isLoading: false });
+            throw error;
         }
-
-        // Refresh reports
-        await get().fetchReports();
-
-        set({
-            newReport: initialNewReport,
-            isReportSheetOpen: false,
-            isLoading: false,
-        });
-
-    } catch(error) {
-        console.error('Failed to submit report:', error);
-        set({ isLoading: false });
-        throw error;
-    }
-},
+    },
 
     // Fetch all reports from Supabase
     fetchReports: async () => {

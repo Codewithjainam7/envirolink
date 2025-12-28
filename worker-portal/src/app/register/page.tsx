@@ -151,12 +151,16 @@ export default function RegisterPage() {
 
             if (authData.user) {
                 // Insert into workers table with pending_approval status
-                console.log('Inserting worker into database with user id:', authData.user.id);
+                // Note: We don't use auth.user.id as the worker's id because the foreign key
+                // constraint would fail if email confirmation is required. Instead, we let
+                // the database generate a UUID and store the auth user_id separately.
+                console.log('Inserting worker into database. Auth user id:', authData.user.id);
 
                 const { data: workerData, error: workerError } = await supabase
                     .from('workers')
                     .insert([{
-                        id: authData.user.id,
+                        // Don't specify id - let database generate it with uuid_generate_v4()
+                        user_id: authData.user.id, // Link to auth user
                         first_name: formData.firstName,
                         last_name: formData.lastName,
                         email: formData.email,

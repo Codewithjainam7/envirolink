@@ -164,47 +164,26 @@ export const useAppStore = create<AppState>((set, get) => ({
                 hasImages: newReport.images.length
             });
 
-            // === ANTI-ABUSE CHECKS ===
-
-            // Helper function to calculate distance between two coordinates (Haversine formula)
-            const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-                const R = 6371e3; // Earth's radius in meters
-                const φ1 = lat1 * Math.PI / 180;
-                const φ2 = lat2 * Math.PI / 180;
-                const Δφ = (lat2 - lat1) * Math.PI / 180;
-                const Δλ = (lon2 - lon1) * Math.PI / 180;
-                const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-                return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            };
-
-            // Duplicate check removed as per user request
-            // Rate limit: Max 10 reports per day
-            const todayReports = userRecentReports.length;
-            if (todayReports >= 10) {
-                set({ isLoading: false });
-                throw new Error('RATE_LIMIT: You have reached the maximum of 10 reports per day. Please try again tomorrow.');
-            }
+            // Anti-abuse checks removed as per user request
 
 
 
             // Insert report to Supabase
-            const { data: reportData, error: reportError } = await supabase
-                .from('reports')
-                .insert({
-                    user_id: newReport.isAnonymous ? null : user?.id,
-                    category: newReport.category,
-                    severity: 'medium',
-                    status: 'submitted',
-                    description: newReport.description || 'No description',
-                    latitude: newReport.location?.latitude || 0,
-                    longitude: newReport.location?.longitude || 0,
-                    address: newReport.location?.address || 'Unknown location',
-                    locality: newReport.location?.locality || 'Unknown',
-                    city: newReport.location?.city || 'Mumbai',
-                    is_anonymous: newReport.isAnonymous,
-                    sla_hours: 24,
-                    sla_due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                } as any)
+            const { data: reportData, error: reportError } = await supabase.from('reports').insert({
+                user_id: newReport.isAnonymous ? null : user?.id,
+                category: newReport.category,
+                severity: 'medium',
+                status: 'submitted',
+                description: newReport.description || 'No description',
+                latitude: newReport.location?.latitude || 0,
+                longitude: newReport.location?.longitude || 0,
+                address: newReport.location?.address || 'Unknown location',
+                locality: newReport.location?.locality || 'Unknown',
+                city: newReport.location?.city || 'Mumbai',
+                is_anonymous: newReport.isAnonymous,
+                sla_hours: 24,
+                sla_due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            } as any)
                 .select()
                 .single();
 

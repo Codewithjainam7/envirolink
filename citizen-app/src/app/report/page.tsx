@@ -330,7 +330,7 @@ export default function ReportPage() {
                                         </div>
                                     )}
                                 </div>
-                                <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
+                                <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" suppressHydrationWarning />
 
                                 {isAnalyzing && (
                                     <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-3 rounded-xl">

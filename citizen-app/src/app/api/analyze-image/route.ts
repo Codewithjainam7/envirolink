@@ -56,41 +56,21 @@ or
             }
         };
 
-        // Try gemini-1.5-flash first (more stable), fallback to 2.0
-        const models = ['gemini-1.5-flash', 'gemini-2.0-flash-exp'];
-        let responseData = null;
-        let lastError = '';
-
-        for (const model of models) {
-            try {
-                const response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(requestBody)
-                    }
-                );
-
-                const responseText = await response.text();
-                console.log(`[${model}] Status:`, response.status);
-
-                if (response.ok) {
-                    responseData = JSON.parse(responseText);
-                    console.log(`[${model}] Success`);
-                    break;
-                } else {
-                    lastError = responseText;
-                    console.log(`[${model}] Failed:`, responseText.substring(0, 200));
-                }
-            } catch (e) {
-                console.log(`[${model}] Error:`, e);
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
             }
-        }
+        );
 
-        if (!responseData) {
-            console.error('All models failed:', lastError);
-            // Return success with manual selection required
+        const responseText = await response.text();
+        console.log('API Status:', response.status);
+        console.log('API Response:', responseText.substring(0, 500));
+
+        if (!response.ok) {
+            console.error('API Error:', responseText);
             return NextResponse.json({
                 isAppropriate: true,
                 isWasteRelated: true,
@@ -100,6 +80,8 @@ or
                 rejectionReason: ''
             });
         }
+
+        const responseData = JSON.parse(responseText);
 
         const aiText = responseData.candidates?.[0]?.content?.parts?.[0]?.text || '';
         console.log('AI Response:', aiText);

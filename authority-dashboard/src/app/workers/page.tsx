@@ -89,14 +89,24 @@ export default function WorkersManagementPage() {
     const handleApprove = async (workerId: string) => {
         setActionLoading(workerId);
         try {
+            console.log('Approving worker:', workerId);
             const { error } = await supabase
                 .from('workers')
                 .update({ status: 'approved' })
                 .eq('id', workerId);
 
-            if (error) throw error;
+            if (error) {
+                console.error('Supabase error approving worker:', error);
+                throw error;
+            }
+
+            console.log('Worker approved successfully, refreshing lists...');
             setPendingWorkers(pendingWorkers.filter(w => w.id !== workerId));
-            fetchActiveWorkers(); // Refresh active list
+            await fetchActiveWorkers(); // Refresh active list
+            console.log('Active workers refreshed, count:', activeWorkers.length);
+
+            // Auto-switch to Active tab to show the approved worker
+            setSelectedTab('active');
         } catch (err) {
             console.error('Error approving worker:', err);
             alert('Failed to approve worker');

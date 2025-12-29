@@ -3,19 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(request: NextRequest) {
     console.log('--- Analyze Image API Request Started ---');
 
-    // Get API key from environment
-    const API_KEY = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-    if (!API_KEY) {
-        console.error('CRITICAL ERROR: Gemini API Key is missing');
-        return NextResponse.json({
-            isWasteRelated: true,
-            topCategories: [],
-            confidence: 0,
-            description: 'API Key not configured - please proceed manually',
-            rejectionReason: ''
-        });
-    }
+    // Get API keys from environment
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
     try {
         const body = await request.json();
@@ -51,16 +41,15 @@ Categories:
 
 If no waste visible, set is_waste to false.`;
 
-        // Use gemini-2.0-flash (has image support)
-        const models = ['gemini-2.0-flash'];
         let result = null;
 
-        for (const model of models) {
+        // Try Gemini 2.0 Flash first
+        if (GEMINI_API_KEY && !result) {
             try {
-                console.log(`Trying model: ${model}`);
+                console.log('Trying Gemini 2.0 Flash...');
 
                 const response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`,
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -79,46 +68,81 @@ If no waste visible, set is_waste to false.`;
                     }
                 );
 
-                if (!response.ok) {
-                    const errText = await response.text();
-                    console.error(`Model ${model} failed:`, errText);
-                    continue;
-                }
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Gemini response received');
 
-                const data = await response.json();
-                console.log(`Model ${model} response:`, JSON.stringify(data).substring(0, 500));
-
-                // Extract text from response - handle both regular and thinking model responses
-                let aiText = '';
-                if (data.candidates?.[0]?.content?.parts) {
-                    for (const part of data.candidates[0].content.parts) {
-                        if (part.text) {
-                            aiText += part.text;
+                    let aiText = '';
+                    if (data.candidates?.[0]?.content?.parts) {
+                        for (const part of data.candidates[0].content.parts) {
+                            if (part.text) aiText += part.text;
                         }
                     }
-                }
 
-                if (!aiText) {
-                    console.warn(`No text in ${model} response`);
-                    continue;
-                }
-
-                console.log('AI output:', aiText);
-
-                // Parse JSON from response
-                const jsonMatch = aiText.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    result = JSON.parse(jsonMatch[0]);
-                    console.log('Parsed result:', result);
-                    break;
+                    if (aiText) {
+                        const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            result = JSON.parse(jsonMatch[0]);
+                            console.log('Gemini parsed result:', result);
+                        }
+                    }
+                } else {
+                    console.error('Gemini failed:', await response.text());
                 }
             } catch (e) {
-                console.error(`Error with model ${model}:`, e);
+                console.error('Gemini error:', e);
+            }
+        }
+
+        // Fallback to Groq if Gemini failed
+        if (GROQ_API_KEY && !result) {
+            try {
+                console.log('Trying Groq as fallback...');
+
+                const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${GROQ_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: 'llama-3.2-90b-vision-preview',
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    { type: 'text', text: PROMPT },
+                                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Data}` } }
+                                ]
+                            }
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 1024
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Groq response received');
+
+                    const aiText = data.choices?.[0]?.message?.content || '';
+                    if (aiText) {
+                        const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            result = JSON.parse(jsonMatch[0]);
+                            console.log('Groq parsed result:', result);
+                        }
+                    }
+                } else {
+                    console.error('Groq failed:', await response.text());
+                }
+            } catch (e) {
+                console.error('Groq error:', e);
             }
         }
 
         if (!result) {
-            console.warn('All models failed, returning fallback');
+            console.warn('All AI models failed, returning fallback');
             return NextResponse.json({
                 isWasteRelated: true,
                 isAppropriate: true,

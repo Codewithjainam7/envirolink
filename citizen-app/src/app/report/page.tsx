@@ -54,82 +54,21 @@ export default function ReportPage() {
     const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');
     const [isRecording, setIsRecording] = useState(false);
-    const [recognition, setRecognition] = useState<any>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [aiAnalysis, setAiAnalysis] = useState<{ topCategories: string[]; confidence: number; description: string } | null>(null);
     const [showAllCategories, setShowAllCategories] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const [voiceSupported, setVoiceSupported] = useState(true);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+    const [isTranscribing, setIsTranscribing] = useState(false);
 
     useEffect(() => {
+        // Check if MediaRecorder is supported
         if (typeof window !== 'undefined') {
-            // Check if we're on HTTPS (required for Web Speech API in production)
-            const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
-
-            // Support both standard and webkit prefix
-            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-            if (!SpeechRecognition) {
-                console.log('SpeechRecognition not supported in this browser');
-                setVoiceSupported(false);
-                return;
-            }
-
-            if (!isSecure) {
-                console.log('Voice input requires HTTPS');
-                setVoiceSupported(false);
-                return;
-            }
-
-            try {
-                const inst = new SpeechRecognition();
-                inst.continuous = false; // Changed to false for better reliability
-                inst.interimResults = false; // Simpler - only get final results
-                inst.lang = 'en-IN';
-                inst.maxAlternatives = 1;
-
-                inst.onresult = (e: any) => {
-                    const result = e.results[e.results.length - 1];
-                    if (result.isFinal) {
-                        const transcript = result[0].transcript;
-                        if (transcript.trim()) {
-                            setDescription(prev => (prev ? prev + ' ' : '') + transcript.trim());
-                            toast.success('Voice captured!');
-                        }
-                    }
-                };
-
-                inst.onerror = (e: any) => {
-                    console.error('Speech recognition error:', e.error);
-                    setIsRecording(false);
-
-                    switch (e.error) {
-                        case 'not-allowed':
-                            toast.error('Microphone blocked. Enable it in browser settings.');
-                            break;
-                        case 'no-speech':
-                            toast.error('No speech detected. Tap mic and speak clearly.');
-                            break;
-                        case 'network':
-                            toast.error('Voice service unavailable. Type your description instead.');
-                            setVoiceSupported(false); // Disable for this session
-                            break;
-                        case 'aborted':
-                            // User cancelled, no need to show error
-                            break;
-                        default:
-                            toast.error('Voice input failed. Please type instead.');
-                    }
-                };
-
-                inst.onend = () => {
-                    setIsRecording(false);
-                };
-
-                setRecognition(inst);
-            } catch (err) {
-                console.error('Failed to initialize speech recognition:', err);
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                console.log('MediaDevices not supported');
                 setVoiceSupported(false);
             }
         }
@@ -260,33 +199,100 @@ export default function ReportPage() {
         }
     };
 
-    const toggleRecording = () => {
-        if (!voiceSupported || !recognition) {
+    const toggleRecording = async () => {
+        if (!voiceSupported) {
             toast.error('Voice input unavailable. Please type your description.');
             return;
         }
 
         if (isRecording) {
-            try {
-                recognition.stop();
-                setIsRecording(false);
-            } catch (err) {
-                console.error('Error stopping recognition:', err);
-                setIsRecording(false);
+            // Stop recording
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                mediaRecorderRef.current.stop();
             }
+            setIsRecording(false);
         } else {
+            // Start recording
             try {
-                recognition.start();
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                mediaRecorderRef.current = mediaRecorder;
+                audioChunksRef.current = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunksRef.current.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    // Stop all tracks
+                    stream.getTracks().forEach(track => track.stop());
+
+                    if (audioChunksRef.current.length === 0) {
+                        toast.error('No audio recorded');
+                        return;
+                    }
+
+                    // Convert to base64 and send to API
+                    setIsTranscribing(true);
+                    try {
+                        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                        const reader = new FileReader();
+
+                        reader.onloadend = async () => {
+                            const base64Audio = reader.result as string;
+
+                            try {
+                                const response = await fetch('/api/speech-to-text', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ audioBase64: base64Audio })
+                                });
+
+                                const result = await response.json();
+
+                                if (result.transcript && result.transcript.trim()) {
+                                    setDescription(prev => (prev ? prev + ' ' : '') + result.transcript.trim());
+                                    toast.success('Voice captured!');
+                                } else {
+                                    toast.error('No speech detected. Try again.');
+                                }
+                            } catch (err) {
+                                console.error('Transcription error:', err);
+                                toast.error('Failed to transcribe. Please type instead.');
+                            }
+                            setIsTranscribing(false);
+                        };
+
+                        reader.readAsDataURL(audioBlob);
+                    } catch (err) {
+                        console.error('Audio processing error:', err);
+                        toast.error('Audio processing failed');
+                        setIsTranscribing(false);
+                    }
+                };
+
+                mediaRecorder.start();
                 setIsRecording(true);
-                toast.success('🎤 Speak now...');
+                toast.success('🎤 Recording... Tap again to stop');
+
+                // Auto-stop after 30 seconds
+                setTimeout(() => {
+                    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                        mediaRecorderRef.current.stop();
+                        setIsRecording(false);
+                    }
+                }, 30000);
+
             } catch (err: any) {
-                console.error('Error starting recognition:', err);
-                if (err.message?.includes('already started')) {
-                    setIsRecording(true);
+                console.error('Microphone access error:', err);
+                if (err.name === 'NotAllowedError') {
+                    toast.error('Microphone blocked. Enable it in browser settings.');
                 } else {
-                    toast.error('Microphone access required. Check browser permissions.');
-                    setVoiceSupported(false);
+                    toast.error('Could not access microphone.');
                 }
+                setVoiceSupported(false);
             }
         }
     };
@@ -563,8 +569,15 @@ export default function ReportPage() {
                                         <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue in detail... (optional)" rows={4}
                                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-emerald-500 resize-none" />
                                         {voiceSupported ? (
-                                            <button onClick={toggleRecording} className={`absolute bottom-3 right-3 p-3 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                                                {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+                                            <button
+                                                onClick={toggleRecording}
+                                                disabled={isTranscribing}
+                                                className={`absolute bottom-3 right-3 p-3 rounded-full transition-all ${isTranscribing ? 'bg-blue-500 text-white' :
+                                                        isRecording ? 'bg-red-500 text-white animate-pulse' :
+                                                            'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                    }`}>
+                                                {isTranscribing ? <Loader2 size={20} className="animate-spin" /> :
+                                                    isRecording ? <MicOff size={20} /> : <Mic size={20} />}
                                             </button>
                                         ) : (
                                             <button disabled className="absolute bottom-3 right-3 p-3 rounded-full bg-gray-50 text-gray-300 cursor-not-allowed" title="Voice input unavailable">
@@ -572,7 +585,8 @@ export default function ReportPage() {
                                             </button>
                                         )}
                                     </div>
-                                    {isRecording && <p className="text-red-500 text-sm mt-2 flex items-center gap-2"><span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />Listening...</p>}
+                                    {isRecording && <p className="text-red-500 text-sm mt-2 flex items-center gap-2"><span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />Recording... Tap to stop</p>}
+                                    {isTranscribing && <p className="text-blue-500 text-sm mt-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Transcribing...</p>}
                                 </div>
                             </div>
                         )}

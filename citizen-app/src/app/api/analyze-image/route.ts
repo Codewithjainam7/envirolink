@@ -51,8 +51,8 @@ Categories:
 
 If no waste visible, set is_waste to false.`;
 
-        // Use gemini-2.0-flash-lite only
-        const models = ['gemini-2.0-flash-lite'];
+        // Use gemini-2.0-flash (has image support)
+        const models = ['gemini-2.0-flash'];
         let result = null;
 
         for (const model of models) {

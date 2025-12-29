@@ -61,17 +61,52 @@ export default function ReportPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        if (typeof window !== 'undefined' && 'webkitSpeechRecognition' in window) {
-            const SpeechRecognition = (window as any).webkitSpeechRecognition;
-            const inst = new SpeechRecognition();
-            inst.continuous = true; inst.interimResults = true; inst.lang = 'en-IN';
-            inst.onresult = (e: any) => {
-                let t = '';
-                for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) t += e.results[i][0].transcript;
-                if (t) setDescription(p => p + ' ' + t);
-            };
-            inst.onerror = () => { setIsRecording(false); toast.error('Voice error'); };
-            setRecognition(inst);
+        if (typeof window !== 'undefined') {
+            // Support both standard and webkit prefix
+            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+            if (SpeechRecognition) {
+                try {
+                    const inst = new SpeechRecognition();
+                    inst.continuous = true;
+                    inst.interimResults = true;
+                    inst.lang = 'en-IN';
+
+                    inst.onresult = (e: any) => {
+                        let finalTranscript = '';
+                        for (let i = e.resultIndex; i < e.results.length; i++) {
+                            if (e.results[i].isFinal) {
+                                finalTranscript += e.results[i][0].transcript + ' ';
+                            }
+                        }
+                        if (finalTranscript.trim()) {
+                            setDescription(prev => (prev + ' ' + finalTranscript).trim());
+                        }
+                    };
+
+                    inst.onerror = (e: any) => {
+                        console.error('Speech recognition error:', e.error);
+                        setIsRecording(false);
+                        if (e.error === 'not-allowed') {
+                            toast.error('Microphone access denied. Please allow microphone permission.');
+                        } else if (e.error === 'no-speech') {
+                            toast.error('No speech detected. Please try again.');
+                        } else if (e.error === 'network') {
+                            toast.error('Network error. Please check your connection.');
+                        } else {
+                            toast.error('Voice input error. Please try again.');
+                        }
+                    };
+
+                    inst.onend = () => {
+                        setIsRecording(false);
+                    };
+
+                    setRecognition(inst);
+                } catch (err) {
+                    console.error('Failed to initialize speech recognition:', err);
+                }
+            }
         }
     }, []);
 
@@ -201,9 +236,35 @@ export default function ReportPage() {
     };
 
     const toggleRecording = () => {
-        if (!recognition) { toast.error('Not supported'); return; }
-        if (isRecording) { recognition.stop(); setIsRecording(false); }
-        else { recognition.start(); setIsRecording(true); toast.success('Listening...'); }
+        if (!recognition) {
+            toast.error('Voice input is not supported in this browser. Please use Chrome or Edge.');
+            return;
+        }
+
+        if (isRecording) {
+            try {
+                recognition.stop();
+                setIsRecording(false);
+                toast.success('Voice recording stopped');
+            } catch (err) {
+                console.error('Error stopping recognition:', err);
+                setIsRecording(false);
+            }
+        } else {
+            try {
+                recognition.start();
+                setIsRecording(true);
+                toast.success('🎤 Listening... Speak now');
+            } catch (err: any) {
+                console.error('Error starting recognition:', err);
+                if (err.message?.includes('already started')) {
+                    // Already running, just update state
+                    setIsRecording(true);
+                } else {
+                    toast.error('Failed to start voice input. Please check microphone permissions.');
+                }
+            }
+        }
     };
 
     const handleSubmit = async () => {

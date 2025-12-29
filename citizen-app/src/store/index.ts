@@ -102,15 +102,39 @@ export const useAppStore = create<AppState>((set, get) => ({
                 const fullName = meta.full_name || meta.name || session.user.email?.split('@')[0] || 'User';
                 const nameParts = fullName.split(' ');
 
-                // Try to get additional profile data from profiles table (optional - may not exist)
+                // Try to get additional profile data from profiles table, create if doesn't exist
                 let profileData: any = null;
                 try {
-                    const { data } = await supabase
+                    const { data, error } = await supabase
                         .from('profiles')
                         .select('*')
                         .eq('id', session.user.id)
                         .single();
-                    profileData = data;
+
+                    if (error || !data) {
+                        // Profile doesn't exist, create it
+                        const firstName = nameParts[0] || 'User';
+                        const lastName = nameParts.slice(1).join(' ') || '';
+                        const avatar = meta.avatar_url || meta.picture || '';
+
+                        // @ts-ignore - Supabase types not generated
+                        const { data: newProfile } = await supabase
+                            .from('profiles')
+                            .upsert({
+                                id: session.user.id,
+                                first_name: firstName,
+                                last_name: lastName,
+                                avatar_url: avatar,
+                                points: 0,
+                                reports_submitted: 0,
+                                reports_resolved: 0
+                            }, { onConflict: 'id' })
+                            .select()
+                            .single();
+                        profileData = newProfile;
+                    } else {
+                        profileData = data;
+                    }
                 } catch (e) {
                     // Profiles table may not exist yet - that's okay
                     console.log('Profiles table not available, using OAuth data');
@@ -243,14 +267,19 @@ export const useAppStore = create<AppState>((set, get) => ({
                 }
             }
 
-            // Update user stats if logged in (non-fatal if fails) - Award 50 points per report
+            // Update user stats if logged in (non-fatal if fails) - Award 20 points per report
             if (user && !newReport.isAnonymous) {
                 try {
+                    // Use upsert to create profile if it doesn't exist
                     // @ts-ignore - Supabase types not generated
-                    await supabase.from('profiles').update({
+                    await supabase.from('profiles').upsert({
+                        id: user.id,
+                        first_name: user.profile?.firstName || '',
+                        last_name: user.profile?.lastName || '',
+                        avatar_url: user.profile?.avatar || '',
                         reports_submitted: (user.engagement?.totalReports || 0) + 1,
-                        points: (user.engagement?.points || 0) + 50  // 50 points per valid report
-                    }).eq('id', user.id);
+                        points: (user.engagement?.points || 0) + 20  // 20 points per valid report
+                    }, { onConflict: 'id' });
                 } catch (profileError) {
                     console.warn('Profile update failed (non-fatal):', profileError);
                 }

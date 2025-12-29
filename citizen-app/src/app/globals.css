@@ -991,3 +991,20 @@ footer {
 .overlay {
   z-index: 9500 !important;
 }
+
+/* ============================================
+   ACHIEVEMENT PROGRESS BAR ANIMATIONS
+   ============================================ */
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}

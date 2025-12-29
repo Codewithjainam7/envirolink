@@ -88,6 +88,22 @@ export default function ProfilePage() {
     const router = useRouter();
     const { user, isAuthenticated, initializeAuth, fetchUserReports, userReports, reports } = useAppStore();
     const [activeTab, setActiveTab] = useState<'overview' | 'achievements' | 'activity'>('overview');
+    const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+    const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null);
+
+    // 10 Default avatars using DiceBear API
+    const DEFAULT_AVATARS = [
+        'https://api.dicebear.com/7.x/adventurer/svg?seed=Leo&backgroundColor=b6e3f4',
+        'https://api.dicebear.com/7.x/adventurer/svg?seed=Maya&backgroundColor=c0aede',
+        'https://api.dicebear.com/7.x/adventurer/svg?seed=Alex&backgroundColor=d1d4f9',
+        'https://api.dicebear.com/7.x/adventurer/svg?seed=Sam&backgroundColor=ffd5dc',
+        'https://api.dicebear.com/7.x/adventurer/svg?seed=Jordan&backgroundColor=ffdfbf',
+        'https://api.dicebear.com/7.x/bottts/svg?seed=Robot1&backgroundColor=b6e3f4',
+        'https://api.dicebear.com/7.x/bottts/svg?seed=Robot2&backgroundColor=c0aede',
+        'https://api.dicebear.com/7.x/fun-emoji/svg?seed=Happy&backgroundColor=d1d4f9',
+        'https://api.dicebear.com/7.x/fun-emoji/svg?seed=Cool&backgroundColor=ffd5dc',
+        'https://api.dicebear.com/7.x/thumbs/svg?seed=Thumbs&backgroundColor=ffdfbf',
+    ];
 
     useEffect(() => {
         initializeAuth();
@@ -96,14 +112,49 @@ export default function ProfilePage() {
     useEffect(() => {
         if (isAuthenticated && user) {
             fetchUserReports();
+            setSelectedAvatar(user.profile?.avatar || null);
         }
     }, [isAuthenticated, user]);
 
     const handleLogout = async () => {
-        const supabase = getSupabase();
-        await supabase.auth.signOut();
-        useAppStore.setState({ user: null, isAuthenticated: false });
-        router.push('/login');
+        try {
+            const supabase = getSupabase();
+            await supabase.auth.signOut();
+            useAppStore.setState({ user: null, isAuthenticated: false, userReports: [], reports: [] });
+            // Clear any cached session data
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('supabase.auth.token');
+                sessionStorage.clear();
+            }
+            router.push('/login');
+            router.refresh();
+        } catch (error) {
+            console.error('Logout error:', error);
+            // Force redirect even if signOut fails
+            useAppStore.setState({ user: null, isAuthenticated: false });
+            router.push('/login');
+        }
+    };
+
+    const handleAvatarSelect = async (avatarUrl: string) => {
+        setSelectedAvatar(avatarUrl);
+        // Update in database
+        try {
+            const supabase = getSupabase();
+            await (supabase.from('profiles') as any).update({ avatar_url: avatarUrl }).eq('id', user?.id);
+            // Update local state
+            if (user) {
+                useAppStore.setState({
+                    user: {
+                        ...user,
+                        profile: { ...user.profile, avatar: avatarUrl }
+                    }
+                });
+            }
+            setShowAvatarPicker(false);
+        } catch (error) {
+            console.error('Failed to update avatar:', error);
+        }
     };
 
     // Get user's level
@@ -118,8 +169,8 @@ export default function ProfilePage() {
     const totalReports = user?.engagement?.totalReports || 0;
     const earnedAchievements = ACHIEVEMENTS.filter(a => totalReports >= a.requirement);
 
-    // Get user's reports
-    const myReports = reports.filter(r => r.reporterId === user?.id).slice(0, 5);
+    // Get user's reports - use userReports directly since fetchUserReports populates it
+    const myReports = userReports.slice(0, 5);
 
     // Show login prompt if not authenticated
     if (!isAuthenticated || !user) {
@@ -225,8 +276,11 @@ export default function ProfilePage() {
                                 <currentLevel.icon size={24} className="text-white" />
                             </motion.div>
 
-                            <button className="absolute -top-2 -right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition border border-gray-200 shadow-sm">
-                                <Camera size={14} className="text-gray-500" />
+                            <button
+                                onClick={() => setShowAvatarPicker(true)}
+                                className="absolute -top-2 -right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center hover:bg-emerald-50 hover:scale-110 transition-all border border-gray-200 shadow-sm"
+                            >
+                                <Camera size={14} className="text-emerald-600" />
                             </button>
                         </div>
 
@@ -329,8 +383,8 @@ export default function ProfilePage() {
                             key={tab}
                             onClick={() => setActiveTab(tab)}
                             className={`flex-1 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === tab
-                                    ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
-                                    : 'text-gray-500 hover:text-gray-700 hover:bg-white'
+                                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-white'
                                 }`}
                         >
                             {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -402,8 +456,8 @@ export default function ProfilePage() {
                                                 </div>
                                                 <div className="flex items-center gap-3">
                                                     <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${report.status === 'resolved' ? 'bg-green-100 text-green-700 border border-green-200' :
-                                                            report.status === 'in_progress' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                                                                'bg-amber-100 text-amber-700 border border-amber-200'
+                                                        report.status === 'in_progress' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                                            'bg-amber-100 text-amber-700 border border-amber-200'
                                                         }`}>
                                                         {report.status?.replace(/_/g, ' ')}
                                                     </span>
@@ -473,8 +527,8 @@ export default function ProfilePage() {
                                             animate={{ opacity: 1, x: 0 }}
                                             transition={{ delay: i * 0.1 }}
                                             className={`p-4 rounded-2xl border transition-all ${isEarned
-                                                    ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200'
-                                                    : 'bg-gray-50 border-gray-200'
+                                                ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200'
+                                                : 'bg-gray-50 border-gray-200'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-4">
@@ -496,15 +550,32 @@ export default function ProfilePage() {
                                                     </div>
                                                     <p className="text-sm text-gray-500 mb-2">{achievement.description}</p>
                                                     {!isEarned && (
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="flex-1 h-3 bg-gradient-to-r from-gray-100 to-gray-200 rounded-full overflow-hidden shadow-inner relative">
                                                                 <motion.div
                                                                     initial={{ width: 0 }}
                                                                     animate={{ width: `${progress}%` }}
-                                                                    className="h-full bg-gradient-to-r from-gray-400 to-gray-300 rounded-full"
-                                                                />
+                                                                    transition={{ duration: 1, ease: "easeOut" }}
+                                                                    className="h-full rounded-full relative overflow-hidden"
+                                                                    style={{
+                                                                        background: `linear-gradient(90deg, ${achievement.color}90, ${achievement.color})`,
+                                                                        boxShadow: `0 0 10px ${achievement.color}50`
+                                                                    }}
+                                                                >
+                                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+                                                                </motion.div>
+                                                                {progress > 0 && (
+                                                                    <motion.div
+                                                                        className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-white shadow-lg"
+                                                                        style={{ left: `calc(${progress}% - 4px)` }}
+                                                                        animate={{ scale: [1, 1.2, 1] }}
+                                                                        transition={{ duration: 1.5, repeat: Infinity }}
+                                                                    />
+                                                                )}
                                                             </div>
-                                                            <span className="text-xs text-gray-400 font-medium">{totalReports}/{achievement.requirement}</span>
+                                                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-gray-100" style={{ color: achievement.color }}>
+                                                                {totalReports}/{achievement.requirement}
+                                                            </span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -627,6 +698,56 @@ export default function ProfilePage() {
                     </div>
                 </motion.div>
             </div>
+
+            {/* Avatar Picker Modal */}
+            <AnimatePresence>
+                {showAvatarPicker && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                        onClick={() => setShowAvatarPicker(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <h3 className="text-2xl font-bold text-gray-900 mb-2 text-center">Choose Your Avatar</h3>
+                            <p className="text-gray-500 text-center mb-6">Select from our collection of unique avatars</p>
+
+                            <div className="grid grid-cols-5 gap-3 mb-6">
+                                {DEFAULT_AVATARS.map((avatar, i) => (
+                                    <motion.button
+                                        key={i}
+                                        whileHover={{ scale: 1.1 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        onClick={() => handleAvatarSelect(avatar)}
+                                        className={`w-14 h-14 rounded-2xl overflow-hidden border-3 transition-all ${selectedAvatar === avatar
+                                            ? 'border-emerald-500 ring-4 ring-emerald-200'
+                                            : 'border-gray-200 hover:border-emerald-300'
+                                            }`}
+                                    >
+                                        <img src={avatar} alt={`Avatar ${i + 1}`} className="w-full h-full object-cover" />
+                                    </motion.button>
+                                ))}
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowAvatarPicker(false)}
+                                    className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-semibold text-gray-700 transition"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

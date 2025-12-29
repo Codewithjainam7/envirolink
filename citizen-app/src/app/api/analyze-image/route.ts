@@ -96,8 +96,8 @@ If no waste visible, set is_waste to false.`;
 
         // Fallback to Groq if Gemini failed
         if (GROQ_API_KEY && !result) {
-            // Try both Groq vision models
-            const groqModels = ['llama-3.2-11b-vision-preview', 'llama-3.2-90b-vision-preview'];
+            // Use new Llama 4 vision models (old 3.2 models are decommissioned)
+            const groqModels = ['meta-llama/llama-4-scout-17b-16e-instruct', 'meta-llama/llama-4-maverick-17b-128e-instruct'];
 
             for (const groqModel of groqModels) {
                 if (result) break;

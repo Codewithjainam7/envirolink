@@ -117,9 +117,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                         const lastName = nameParts.slice(1).join(' ') || '';
                         const avatar = meta.avatar_url || meta.picture || '';
 
-                        // @ts-ignore - Supabase types not generated
-                        const { data: newProfile } = await supabase
-                            .from('profiles')
+                        const { data: newProfile } = await (supabase
+                            .from('profiles') as any)
                             .upsert({
                                 id: session.user.id,
                                 first_name: firstName,

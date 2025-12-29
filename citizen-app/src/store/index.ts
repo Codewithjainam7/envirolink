@@ -19,6 +19,7 @@ interface AppState {
     // UI State
     isLoading: boolean;
     isReportSheetOpen: boolean;
+    isAuthInitialized: boolean;
 
     // New Report Form
     newReport: {
@@ -71,6 +72,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     cityStats: initialStats,
     isLoading: false,
     isReportSheetOpen: false,
+    isAuthInitialized: false,
+
     newReport: initialNewReport,
 
     // Actions
@@ -92,11 +95,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // Initialize auth from Supabase session
     initializeAuth: async () => {
+        if (get().isAuthInitialized) return;
+        set({ isAuthInitialized: true });
+
         try {
             const supabase = getSupabase();
-            const { data: { session } } = await supabase.auth.getSession();
 
-            if (session?.user) {
+            const processSession = async (session: any) => {
+                if (!session?.user) {
+                    set({ user: null, isAuthenticated: false });
+                    return;
+                }
+
                 // Get user metadata from Google OAuth (always available)
                 const meta = session.user.user_metadata || {};
                 const fullName = meta.full_name || meta.name || session.user.email?.split('@')[0] || 'User';
@@ -167,7 +177,19 @@ export const useAppStore = create<AppState>((set, get) => ({
                 };
 
                 set({ user: userData, isAuthenticated: true });
+            };
+
+            // Listen for auth changes
+            supabase.auth.onAuthStateChange((_event, session) => {
+                processSession(session);
+            });
+
+            // Initial session check
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                await processSession(session);
             }
+
         } catch (error) {
             console.error('Failed to initialize auth:', error);
         }

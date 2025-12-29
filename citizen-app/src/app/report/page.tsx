@@ -83,7 +83,8 @@ export default function ReportPage() {
             async (pos) => {
                 const { latitude, longitude } = pos.coords;
                 try {
-                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`);
+                    // Use our proxy API to avoid CORS issues
+                    const res = await fetch(`/api/geocode?lat=${latitude}&lon=${longitude}`);
                     const data = await res.json();
                     setLocation({ lat: latitude, lng: longitude, address: data.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` });
                 } catch { setLocation({ lat: latitude, lng: longitude, address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` }); }
@@ -573,8 +574,8 @@ export default function ReportPage() {
                                                 onClick={toggleRecording}
                                                 disabled={isTranscribing}
                                                 className={`absolute bottom-3 right-3 p-3 rounded-full transition-all ${isTranscribing ? 'bg-blue-500 text-white' :
-                                                        isRecording ? 'bg-red-500 text-white animate-pulse' :
-                                                            'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                    isRecording ? 'bg-red-500 text-white animate-pulse' :
+                                                        'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                                     }`}>
                                                 {isTranscribing ? <Loader2 size={20} className="animate-spin" /> :
                                                     isRecording ? <MicOff size={20} /> : <Mic size={20} />}

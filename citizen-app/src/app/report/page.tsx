@@ -60,52 +60,77 @@ export default function ReportPage() {
     const [showAllCategories, setShowAllCategories] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const [voiceSupported, setVoiceSupported] = useState(true);
+
     useEffect(() => {
         if (typeof window !== 'undefined') {
+            // Check if we're on HTTPS (required for Web Speech API in production)
+            const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+
             // Support both standard and webkit prefix
             const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-            if (SpeechRecognition) {
-                try {
-                    const inst = new SpeechRecognition();
-                    inst.continuous = true;
-                    inst.interimResults = true;
-                    inst.lang = 'en-IN';
+            if (!SpeechRecognition) {
+                console.log('SpeechRecognition not supported in this browser');
+                setVoiceSupported(false);
+                return;
+            }
 
-                    inst.onresult = (e: any) => {
-                        let finalTranscript = '';
-                        for (let i = e.resultIndex; i < e.results.length; i++) {
-                            if (e.results[i].isFinal) {
-                                finalTranscript += e.results[i][0].transcript + ' ';
-                            }
+            if (!isSecure) {
+                console.log('Voice input requires HTTPS');
+                setVoiceSupported(false);
+                return;
+            }
+
+            try {
+                const inst = new SpeechRecognition();
+                inst.continuous = false; // Changed to false for better reliability
+                inst.interimResults = false; // Simpler - only get final results
+                inst.lang = 'en-IN';
+                inst.maxAlternatives = 1;
+
+                inst.onresult = (e: any) => {
+                    const result = e.results[e.results.length - 1];
+                    if (result.isFinal) {
+                        const transcript = result[0].transcript;
+                        if (transcript.trim()) {
+                            setDescription(prev => (prev ? prev + ' ' : '') + transcript.trim());
+                            toast.success('Voice captured!');
                         }
-                        if (finalTranscript.trim()) {
-                            setDescription(prev => (prev + ' ' + finalTranscript).trim());
-                        }
-                    };
+                    }
+                };
 
-                    inst.onerror = (e: any) => {
-                        console.error('Speech recognition error:', e.error);
-                        setIsRecording(false);
-                        if (e.error === 'not-allowed') {
-                            toast.error('Microphone access denied. Please allow microphone permission.');
-                        } else if (e.error === 'no-speech') {
-                            toast.error('No speech detected. Please try again.');
-                        } else if (e.error === 'network') {
-                            toast.error('Network error. Please check your connection.');
-                        } else {
-                            toast.error('Voice input error. Please try again.');
-                        }
-                    };
+                inst.onerror = (e: any) => {
+                    console.error('Speech recognition error:', e.error);
+                    setIsRecording(false);
 
-                    inst.onend = () => {
-                        setIsRecording(false);
-                    };
+                    switch (e.error) {
+                        case 'not-allowed':
+                            toast.error('Microphone blocked. Enable it in browser settings.');
+                            break;
+                        case 'no-speech':
+                            toast.error('No speech detected. Tap mic and speak clearly.');
+                            break;
+                        case 'network':
+                            toast.error('Voice service unavailable. Type your description instead.');
+                            setVoiceSupported(false); // Disable for this session
+                            break;
+                        case 'aborted':
+                            // User cancelled, no need to show error
+                            break;
+                        default:
+                            toast.error('Voice input failed. Please type instead.');
+                    }
+                };
 
-                    setRecognition(inst);
-                } catch (err) {
-                    console.error('Failed to initialize speech recognition:', err);
-                }
+                inst.onend = () => {
+                    setIsRecording(false);
+                };
+
+                setRecognition(inst);
+            } catch (err) {
+                console.error('Failed to initialize speech recognition:', err);
+                setVoiceSupported(false);
             }
         }
     }, []);
@@ -236,8 +261,8 @@ export default function ReportPage() {
     };
 
     const toggleRecording = () => {
-        if (!recognition) {
-            toast.error('Voice input is not supported in this browser. Please use Chrome or Edge.');
+        if (!voiceSupported || !recognition) {
+            toast.error('Voice input unavailable. Please type your description.');
             return;
         }
 
@@ -245,7 +270,6 @@ export default function ReportPage() {
             try {
                 recognition.stop();
                 setIsRecording(false);
-                toast.success('Voice recording stopped');
             } catch (err) {
                 console.error('Error stopping recognition:', err);
                 setIsRecording(false);
@@ -254,14 +278,14 @@ export default function ReportPage() {
             try {
                 recognition.start();
                 setIsRecording(true);
-                toast.success('🎤 Listening... Speak now');
+                toast.success('🎤 Speak now...');
             } catch (err: any) {
                 console.error('Error starting recognition:', err);
                 if (err.message?.includes('already started')) {
-                    // Already running, just update state
                     setIsRecording(true);
                 } else {
-                    toast.error('Failed to start voice input. Please check microphone permissions.');
+                    toast.error('Microphone access required. Check browser permissions.');
+                    setVoiceSupported(false);
                 }
             }
         }
@@ -538,11 +562,17 @@ export default function ReportPage() {
                                     <div className="relative">
                                         <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue in detail... (optional)" rows={4}
                                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-emerald-500 resize-none" />
-                                        <button onClick={toggleRecording} className={`absolute bottom-3 right-3 p-3 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                                            {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
-                                        </button>
+                                        {voiceSupported ? (
+                                            <button onClick={toggleRecording} className={`absolute bottom-3 right-3 p-3 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                                                {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+                                            </button>
+                                        ) : (
+                                            <button disabled className="absolute bottom-3 right-3 p-3 rounded-full bg-gray-50 text-gray-300 cursor-not-allowed" title="Voice input unavailable">
+                                                <Mic size={20} />
+                                            </button>
+                                        )}
                                     </div>
-                                    {isRecording && <p className="text-red-500 text-sm mt-2 flex items-center gap-2"><span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />Recording...</p>}
+                                    {isRecording && <p className="text-red-500 text-sm mt-2 flex items-center gap-2"><span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />Listening...</p>}
                                 </div>
                             </div>
                         )}

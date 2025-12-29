@@ -16,6 +16,10 @@ export const metadata: Metadata = {
   description: "Turn every citizen into a cleanliness sensor. Report waste hotspots, track cleanup progress, and help make your city cleaner.",
   keywords: ["waste management", "civic tech", "smart city", "environmental reporting", "citizen engagement"],
   authors: [{ name: "ENVIROLINK" }],
+  icons: {
+    icon: "/favicon.png",
+    apple: "/favicon.png",
+  },
   openGraph: {
     title: "ENVIROLINK - Report Waste Issues",
     description: "Turn every citizen into a cleanliness sensor. Report waste and track cleanup in your city.",

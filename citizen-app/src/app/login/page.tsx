@@ -57,7 +57,7 @@ export default function LoginPage() {
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
-                router.push('/home');
+                router.push('/report');
             }
         };
         checkSession();
@@ -70,7 +70,7 @@ export default function LoginPage() {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    redirectTo: `${window.location.origin}/auth/callback`,
+                    redirectTo: `${window.location.origin}/auth/callback?next=/report`,
                     queryParams: {
                         access_type: 'offline',
                         prompt: 'consent',

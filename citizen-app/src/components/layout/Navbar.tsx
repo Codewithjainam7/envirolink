@@ -212,19 +212,10 @@ export default function Navbar() {
                                     <motion.button
                                         whileHover={{ scale: 1.02 }}
                                         whileTap={{ scale: 0.98 }}
-                                        className="flex items-center gap-2 px-4 py-2 text-gray-700 font-medium text-sm hover:bg-gray-100 rounded-xl transition-colors"
+                                        className="flex items-center gap-2 px-6 py-2.5 bg-emerald-500 text-white font-semibold text-sm rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"
                                     >
                                         <LogIn size={18} />
                                         <span className="hidden sm:inline">Sign In</span>
-                                    </motion.button>
-                                </Link>
-                                <Link href="/register">
-                                    <motion.button
-                                        whileHover={{ scale: 1.02 }}
-                                        whileTap={{ scale: 0.98 }}
-                                        className="hidden sm:flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white font-semibold text-sm rounded-xl"
-                                    >
-                                        Register
                                     </motion.button>
                                 </Link>
                             </div>
@@ -281,7 +272,7 @@ export default function Navbar() {
                     </Link>
                 </div>
             </motion.div>
-        </motion.header>
+        </motion.header >
     );
 }
 

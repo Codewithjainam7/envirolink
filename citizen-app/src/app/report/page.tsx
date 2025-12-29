@@ -59,6 +59,14 @@ export default function ReportPage() {
     const [showAllCategories, setShowAllCategories] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Auth Check
+    const { isAuthenticated, isLoading } = useAppStore();
+    useEffect(() => {
+        if (!isLoading && !isAuthenticated) {
+            router.push('/login');
+        }
+    }, [isAuthenticated, isLoading, router]);
+
     const [voiceSupported, setVoiceSupported] = useState(true);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);

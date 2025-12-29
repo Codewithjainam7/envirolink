@@ -46,6 +46,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="light" suppressHydrationWarning>
+      <head>
+        <link rel="icon" href="/favicon.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/favicon.png" />
+      </head>
       <body
         className={`${nunito.variable} font-sans antialiased bg-white`}
         suppressHydrationWarning

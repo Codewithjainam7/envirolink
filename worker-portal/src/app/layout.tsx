@@ -24,6 +24,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="light" suppressHydrationWarning>
+      <head>
+        <link rel="icon" href="/favicon.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/favicon.png" />
+      </head>
       <body className={`${geist.variable} antialiased bg-gray-50`} suppressHydrationWarning>
         <BootAppWrapper>
           {children}

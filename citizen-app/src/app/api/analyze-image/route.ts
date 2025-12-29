@@ -96,48 +96,58 @@ If no waste visible, set is_waste to false.`;
 
         // Fallback to Groq if Gemini failed
         if (GROQ_API_KEY && !result) {
-            try {
-                console.log('Trying Groq as fallback...');
+            // Try both Groq vision models
+            const groqModels = ['llama-3.2-11b-vision-preview', 'llama-3.2-90b-vision-preview'];
 
-                const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${GROQ_API_KEY}`
-                    },
-                    body: JSON.stringify({
-                        model: 'llama-3.2-90b-vision-preview',
-                        messages: [
-                            {
-                                role: 'user',
-                                content: [
-                                    { type: 'text', text: PROMPT },
-                                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Data}` } }
-                                ]
+            for (const groqModel of groqModels) {
+                if (result) break;
+
+                try {
+                    console.log(`Trying Groq ${groqModel}...`);
+
+                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${GROQ_API_KEY}`
+                        },
+                        body: JSON.stringify({
+                            model: groqModel,
+                            messages: [
+                                {
+                                    role: 'user',
+                                    content: [
+                                        { type: 'text', text: PROMPT },
+                                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Data}` } }
+                                    ]
+                                }
+                            ],
+                            temperature: 0.1,
+                            max_tokens: 1024
+                        })
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log('Groq response received');
+
+                        const aiText = data.choices?.[0]?.message?.content || '';
+                        console.log('Groq AI text:', aiText);
+
+                        if (aiText) {
+                            const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+                            if (jsonMatch) {
+                                result = JSON.parse(jsonMatch[0]);
+                                console.log('Groq parsed result:', result);
                             }
-                        ],
-                        temperature: 0.1,
-                        max_tokens: 1024
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('Groq response received');
-
-                    const aiText = data.choices?.[0]?.message?.content || '';
-                    if (aiText) {
-                        const jsonMatch = aiText.match(/\{[\s\S]*\}/);
-                        if (jsonMatch) {
-                            result = JSON.parse(jsonMatch[0]);
-                            console.log('Groq parsed result:', result);
                         }
+                    } else {
+                        const errText = await response.text();
+                        console.error(`Groq ${groqModel} failed:`, errText);
                     }
-                } else {
-                    console.error('Groq failed:', await response.text());
+                } catch (e) {
+                    console.error(`Groq ${groqModel} error:`, e);
                 }
-            } catch (e) {
-                console.error('Groq error:', e);
             }
         }
 

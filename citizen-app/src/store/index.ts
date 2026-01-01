@@ -291,19 +291,42 @@ export const useAppStore = create<AppState>((set, get) => ({
             // Update user stats if logged in (non-fatal if fails) - Award 20 points per report
             if (user && !newReport.isAnonymous) {
                 try {
-                    const newPoints = (user.engagement?.points || 0) + 20;
-                    const newReportsCount = (user.engagement?.totalReports || 0) + 1;
+                    // Fetch current profile from database to get accurate points
+                    const { data: currentProfile } = await supabase
+                        .from('profiles')
+                        .select('points, reports_submitted')
+                        .eq('id', user.id)
+                        .single();
 
-                    // Use upsert to create profile if it doesn't exist
+                    const currentDbPoints = currentProfile?.points || 0;
+                    const currentDbReports = currentProfile?.reports_submitted || 0;
+                    const newPoints = currentDbPoints + 20;
+                    const newReportsCount = currentDbReports + 1;
+
+                    console.log('Updating profile points:', {
+                        userId: user.id,
+                        currentDbPoints,
+                        newPoints,
+                        currentDbReports,
+                        newReportsCount
+                    });
+
+                    // Update profile with new values
                     // @ts-ignore - Supabase types not generated
-                    await supabase.from('profiles').upsert({
+                    const { error: updateError } = await supabase.from('profiles').upsert({
                         id: user.id,
                         first_name: user.profile?.firstName || '',
                         last_name: user.profile?.lastName || '',
                         avatar_url: user.profile?.avatar || '',
                         reports_submitted: newReportsCount,
-                        points: newPoints  // 20 points per valid report
+                        points: newPoints
                     }, { onConflict: 'id' });
+
+                    if (updateError) {
+                        console.error('Profile update error:', updateError);
+                    } else {
+                        console.log('Profile updated successfully, new points:', newPoints);
+                    }
 
                     // Update local user state immediately for real-time UI update
                     set({

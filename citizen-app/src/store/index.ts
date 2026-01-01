@@ -379,6 +379,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             // Refresh reports
             await get().fetchReports();
 
+            // Refresh profile points and user reports
+            await get().refreshProfile();
+            await get().fetchUserReports();
+
             set({
                 newReport: initialNewReport,
                 isReportSheetOpen: false,

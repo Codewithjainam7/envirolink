@@ -292,14 +292,15 @@ export const useAppStore = create<AppState>((set, get) => ({
             if (user && !newReport.isAnonymous) {
                 try {
                     // Fetch current profile from database to get accurate points
+                    // @ts-ignore - Supabase types not generated
                     const { data: currentProfile } = await supabase
                         .from('profiles')
                         .select('points, reports_submitted')
                         .eq('id', user.id)
                         .single();
 
-                    const currentDbPoints = currentProfile?.points || 0;
-                    const currentDbReports = currentProfile?.reports_submitted || 0;
+                    const currentDbPoints = (currentProfile as any)?.points || 0;
+                    const currentDbReports = (currentProfile as any)?.reports_submitted || 0;
                     const newPoints = currentDbPoints + 20;
                     const newReportsCount = currentDbReports + 1;
 

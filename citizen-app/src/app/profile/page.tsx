@@ -143,19 +143,20 @@ export default function ProfilePage() {
         try {
             const supabase = getSupabase();
             await supabase.auth.signOut();
-            useAppStore.setState({ user: null, isAuthenticated: false, userReports: [], reports: [] });
+            // Clear the store state first
+            useAppStore.setState({ user: null, isAuthenticated: false, isAuthInitialized: false, userReports: [], reports: [] });
             // Clear any cached session data
             if (typeof window !== 'undefined') {
                 localStorage.removeItem('supabase.auth.token');
                 sessionStorage.clear();
             }
-            router.push('/login');
-            router.refresh();
+            // Redirect to home (not login to avoid race condition with session check)
+            router.replace('/home');
         } catch (error) {
             console.error('Logout error:', error);
             // Force redirect even if signOut fails
-            useAppStore.setState({ user: null, isAuthenticated: false });
-            router.push('/login');
+            useAppStore.setState({ user: null, isAuthenticated: false, isAuthInitialized: false });
+            router.replace('/home');
         }
     };
 

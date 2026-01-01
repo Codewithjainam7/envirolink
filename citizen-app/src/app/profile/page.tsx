@@ -86,7 +86,7 @@ const AnimatedCounter = ({ value, duration = 1 }: { value: number; duration?: nu
 
 export default function ProfilePage() {
     const router = useRouter();
-    const { user, isAuthenticated, initializeAuth, fetchUserReports, userReports, reports } = useAppStore();
+    const { user, isAuthenticated, initializeAuth, fetchUserReports, refreshProfile, userReports, reports } = useAppStore();
     const [activeTab, setActiveTab] = useState<'overview' | 'achievements' | 'activity'>('overview');
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
     const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null);
@@ -135,9 +135,10 @@ export default function ProfilePage() {
     useEffect(() => {
         if (isAuthenticated && user) {
             fetchUserReports();
+            refreshProfile();  // Fetch latest points from database
             setSelectedAvatar(user.profile?.avatar || null);
         }
-    }, [isAuthenticated, user]);
+    }, [isAuthenticated, user?.id]);
 
     const handleLogout = async () => {
         try {

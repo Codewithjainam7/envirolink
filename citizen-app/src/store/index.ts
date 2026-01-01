@@ -42,6 +42,7 @@ interface AppState {
     fetchReports: () => Promise<void>;
     fetchUserReports: () => Promise<void>;
     initializeAuth: () => Promise<void>;
+    refreshProfile: () => Promise<void>;
 }
 
 const initialNewReport = {
@@ -499,6 +500,54 @@ export const useAppStore = create<AppState>((set, get) => ({
         } catch (error) {
             console.error('Failed to fetch user reports:', error);
             set({ isLoading: false });
+        }
+    },
+
+    // Refresh profile data from database (points, reports count)
+    refreshProfile: async () => {
+        const { user } = get();
+        if (!user) return;
+
+        try {
+            const supabase = getSupabase();
+
+            // Fetch latest profile data from database
+            // @ts-ignore - Supabase types not generated
+            const { data: profileData, error } = await (supabase
+                .from('profiles') as any)
+                .select('points, reports_submitted, reports_resolved, avatar_url')
+                .eq('id', user.id)
+                .single();
+
+            if (error) {
+                console.error('Failed to fetch profile:', error);
+                return;
+            }
+
+            if (profileData) {
+                console.log('Refreshed profile data:', profileData);
+
+                // Update user state with fresh data from DB
+                set({
+                    user: {
+                        ...user,
+                        profile: {
+                            ...user.profile,
+                            avatar: profileData.avatar_url || user.profile?.avatar || '',
+                        },
+                        engagement: {
+                            ...user.engagement,
+                            points: profileData.points || 0,
+                            totalReports: profileData.reports_submitted || 0,
+                            resolvedReports: profileData.reports_resolved || 0,
+                            badges: user.engagement?.badges || [],
+                            rank: user.engagement?.rank || 'New Reporter',
+                        }
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error refreshing profile:', error);
         }
     },
 }));

@@ -91,18 +91,41 @@ export default function ProfilePage() {
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
     const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null);
 
-    // 10 Default avatars using DiceBear API
+    // 25 Default avatars using DiceBear API
     const DEFAULT_AVATARS = [
+        // Adventurer style
         'https://api.dicebear.com/7.x/adventurer/svg?seed=Leo&backgroundColor=b6e3f4',
         'https://api.dicebear.com/7.x/adventurer/svg?seed=Maya&backgroundColor=c0aede',
         'https://api.dicebear.com/7.x/adventurer/svg?seed=Alex&backgroundColor=d1d4f9',
         'https://api.dicebear.com/7.x/adventurer/svg?seed=Sam&backgroundColor=ffd5dc',
         'https://api.dicebear.com/7.x/adventurer/svg?seed=Jordan&backgroundColor=ffdfbf',
+        // Bottts (robots)
         'https://api.dicebear.com/7.x/bottts/svg?seed=Robot1&backgroundColor=b6e3f4',
         'https://api.dicebear.com/7.x/bottts/svg?seed=Robot2&backgroundColor=c0aede',
+        'https://api.dicebear.com/7.x/bottts/svg?seed=Robot3&backgroundColor=10b981',
+        'https://api.dicebear.com/7.x/bottts/svg?seed=Robot4&backgroundColor=059669',
+        // Fun emoji
         'https://api.dicebear.com/7.x/fun-emoji/svg?seed=Happy&backgroundColor=d1d4f9',
         'https://api.dicebear.com/7.x/fun-emoji/svg?seed=Cool&backgroundColor=ffd5dc',
+        'https://api.dicebear.com/7.x/fun-emoji/svg?seed=Love&backgroundColor=10b981',
+        'https://api.dicebear.com/7.x/fun-emoji/svg?seed=Star&backgroundColor=34d399',
+        // Thumbs
         'https://api.dicebear.com/7.x/thumbs/svg?seed=Thumbs&backgroundColor=ffdfbf',
+        'https://api.dicebear.com/7.x/thumbs/svg?seed=Green&backgroundColor=6ee7b7',
+        // Lorelei (realistic)
+        'https://api.dicebear.com/7.x/lorelei/svg?seed=Aria&backgroundColor=b6e3f4',
+        'https://api.dicebear.com/7.x/lorelei/svg?seed=Max&backgroundColor=c0aede',
+        'https://api.dicebear.com/7.x/lorelei/svg?seed=Zoe&backgroundColor=34d399',
+        // Personas
+        'https://api.dicebear.com/7.x/personas/svg?seed=Nature&backgroundColor=10b981',
+        'https://api.dicebear.com/7.x/personas/svg?seed=Earth&backgroundColor=059669',
+        // Avataaars
+        'https://api.dicebear.com/7.x/avataaars/svg?seed=Eco&backgroundColor=6ee7b7',
+        'https://api.dicebear.com/7.x/avataaars/svg?seed=Green&backgroundColor=34d399',
+        'https://api.dicebear.com/7.x/avataaars/svg?seed=Nature&backgroundColor=10b981',
+        // Big smile
+        'https://api.dicebear.com/7.x/big-smile/svg?seed=Happy&backgroundColor=6ee7b7',
+        'https://api.dicebear.com/7.x/big-smile/svg?seed=Eco&backgroundColor=34d399',
     ];
 
     useEffect(() => {
@@ -337,14 +360,36 @@ export default function ProfilePage() {
                                 <span className="text-sm text-gray-500 font-medium">Progress to {nextLevel.name}</span>
                                 <span className="text-sm font-bold text-gray-900">{userPoints} / {nextLevel.minPoints} pts</span>
                             </div>
-                            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-4 bg-gradient-to-r from-gray-100 via-gray-50 to-gray-100 rounded-full overflow-hidden shadow-inner relative">
                                 <motion.div
                                     initial={{ width: 0 }}
                                     animate={{ width: `${Math.min(levelProgress, 100)}%` }}
-                                    transition={{ duration: 1, ease: "easeOut" }}
-                                    className="h-full rounded-full"
-                                    style={{ background: `linear-gradient(90deg, ${currentLevel.color}, ${nextLevel.color})` }}
-                                />
+                                    transition={{ duration: 1.2, ease: "easeOut" }}
+                                    className="h-full rounded-full relative overflow-hidden"
+                                    style={{
+                                        background: 'linear-gradient(90deg, #10b981, #34d399, #6ee7b7, #34d399, #10b981)',
+                                        backgroundSize: '200% 100%',
+                                        boxShadow: '0 0 20px rgba(16, 185, 129, 0.5), inset 0 1px 0 rgba(255,255,255,0.3)'
+                                    }}
+                                >
+                                    {/* Shimmer effect */}
+                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer" />
+                                    {/* Glow pulse */}
+                                    <motion.div
+                                        className="absolute inset-0 bg-gradient-to-r from-emerald-400/0 via-white/30 to-emerald-400/0"
+                                        animate={{ x: ['-100%', '200%'] }}
+                                        transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                                    />
+                                </motion.div>
+                                {/* Progress indicator dot */}
+                                {levelProgress > 0 && (
+                                    <motion.div
+                                        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg border-2 border-emerald-400"
+                                        style={{ left: `calc(${Math.min(levelProgress, 100)}% - 6px)` }}
+                                        animate={{ scale: [1, 1.2, 1], boxShadow: ['0 0 0 0 rgba(16,185,129,0.4)', '0 0 0 8px rgba(16,185,129,0)', '0 0 0 0 rgba(16,185,129,0)'] }}
+                                        transition={{ duration: 1.5, repeat: Infinity }}
+                                    />
+                                )}
                             </div>
                         </motion.div>
                     )}

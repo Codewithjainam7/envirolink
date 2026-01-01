@@ -291,6 +291,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             // Update user stats if logged in (non-fatal if fails) - Award 20 points per report
             if (user && !newReport.isAnonymous) {
                 try {
+                    const newPoints = (user.engagement?.points || 0) + 20;
+                    const newReportsCount = (user.engagement?.totalReports || 0) + 1;
+
                     // Use upsert to create profile if it doesn't exist
                     // @ts-ignore - Supabase types not generated
                     await supabase.from('profiles').upsert({
@@ -298,9 +301,24 @@ export const useAppStore = create<AppState>((set, get) => ({
                         first_name: user.profile?.firstName || '',
                         last_name: user.profile?.lastName || '',
                         avatar_url: user.profile?.avatar || '',
-                        reports_submitted: (user.engagement?.totalReports || 0) + 1,
-                        points: (user.engagement?.points || 0) + 20  // 20 points per valid report
+                        reports_submitted: newReportsCount,
+                        points: newPoints  // 20 points per valid report
                     }, { onConflict: 'id' });
+
+                    // Update local user state immediately for real-time UI update
+                    set({
+                        user: {
+                            ...user,
+                            engagement: {
+                                ...user.engagement,
+                                points: newPoints,
+                                totalReports: newReportsCount,
+                                resolvedReports: user.engagement?.resolvedReports || 0,
+                                badges: user.engagement?.badges || [],
+                                rank: user.engagement?.rank || 'New Reporter',
+                            }
+                        }
+                    });
                 } catch (profileError) {
                     console.warn('Profile update failed (non-fatal):', profileError);
                 }

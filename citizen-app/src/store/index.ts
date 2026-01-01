@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Report, User, CityStats, WasteCategory, Location } from '@/types';
 import { getSupabase } from '@/lib/supabase';
+import { toast } from 'react-hot-toast';
 
 // App Store
 interface AppState {
@@ -327,8 +328,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
                         if (updateError) {
                             console.error('Profile update error:', updateError);
+                            toast.error('Failed to update points');
                         } else {
                             console.log('Profile updated successfully, new points:', newPoints);
+                            toast.success(`You earned 20 points! Total: ${newPoints}`, { duration: 4000, icon: '🎉' });
                         }
                     } else {
                         // Profile doesn't exist - create it with initial 20 points
@@ -352,8 +355,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
                         if (insertError) {
                             console.error('Profile insert error:', insertError);
+                            toast.error('Failed to initialize points');
                         } else {
                             console.log('Profile created successfully with points:', newPoints);
+                            toast.success(`You earned your first 20 points! 🎉`, { duration: 4000 });
                         }
                     }
 

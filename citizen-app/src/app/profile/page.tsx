@@ -142,21 +142,46 @@ export default function ProfilePage() {
     const handleLogout = async () => {
         try {
             const supabase = getSupabase();
-            await supabase.auth.signOut();
-            // Clear the store state first
-            useAppStore.setState({ user: null, isAuthenticated: false, isAuthInitialized: false, userReports: [], reports: [] });
-            // Clear any cached session data
+
+            // Sign out from Supabase
+            const { error } = await supabase.auth.signOut();
+            if (error) console.error('SignOut error:', error);
+
+            // Clear the store state
+            useAppStore.setState({
+                user: null,
+                isAuthenticated: false,
+                isAuthInitialized: false,
+                userReports: [],
+                reports: []
+            });
+
+            // Clear all storage
             if (typeof window !== 'undefined') {
-                localStorage.removeItem('supabase.auth.token');
+                // Clear localStorage items related to Supabase
+                Object.keys(localStorage).forEach(key => {
+                    if (key.includes('supabase') || key.includes('sb-')) {
+                        localStorage.removeItem(key);
+                    }
+                });
                 sessionStorage.clear();
+
+                // Clear cookies (Supabase SSR uses cookies)
+                document.cookie.split(';').forEach(cookie => {
+                    const name = cookie.split('=')[0].trim();
+                    if (name.includes('sb-') || name.includes('supabase')) {
+                        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+                    }
+                });
             }
-            // Redirect to home (not login to avoid race condition with session check)
-            router.replace('/home');
+
+            // Force a hard reload to clear all client state
+            window.location.href = '/home';
         } catch (error) {
             console.error('Logout error:', error);
             // Force redirect even if signOut fails
             useAppStore.setState({ user: null, isAuthenticated: false, isAuthInitialized: false });
-            router.replace('/home');
+            window.location.href = '/home';
         }
     };
 

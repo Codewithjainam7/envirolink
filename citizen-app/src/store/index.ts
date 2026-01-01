@@ -316,8 +316,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                         console.log('Updating existing profile:', { currentDbPoints, newPoints, newReportsCount });
 
                         // @ts-ignore - Supabase types not generated
-                        const { error: updateError } = await supabase
-                            .from('profiles')
+                        const { error: updateError } = await (supabase
+                            .from('profiles') as any)
                             .update({
                                 points: newPoints,
                                 reports_submitted: newReportsCount
@@ -337,8 +337,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                         console.log('Creating new profile with points:', newPoints);
 
                         // @ts-ignore - Supabase types not generated
-                        const { error: insertError } = await supabase
-                            .from('profiles')
+                        const { error: insertError } = await (supabase
+                            .from('profiles') as any)
                             .insert({
                                 id: user.id,
                                 first_name: user.profile?.firstName || '',

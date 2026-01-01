@@ -291,42 +291,69 @@ export const useAppStore = create<AppState>((set, get) => ({
             // Update user stats if logged in (non-fatal if fails) - Award 20 points per report
             if (user && !newReport.isAnonymous) {
                 try {
-                    // Fetch current profile from database to get accurate points
+                    console.log('Attempting to update points for user:', user.id);
+
+                    // First, try to get existing profile
                     // @ts-ignore - Supabase types not generated
-                    const { data: currentProfile } = await supabase
+                    const { data: currentProfile, error: fetchError } = await supabase
                         .from('profiles')
                         .select('points, reports_submitted')
                         .eq('id', user.id)
                         .single();
 
-                    const currentDbPoints = (currentProfile as any)?.points || 0;
-                    const currentDbReports = (currentProfile as any)?.reports_submitted || 0;
-                    const newPoints = currentDbPoints + 20;
-                    const newReportsCount = currentDbReports + 1;
+                    console.log('Current profile fetch result:', { currentProfile, fetchError });
 
-                    console.log('Updating profile points:', {
-                        userId: user.id,
-                        currentDbPoints,
-                        newPoints,
-                        currentDbReports,
-                        newReportsCount
-                    });
+                    let newPoints: number;
+                    let newReportsCount: number;
 
-                    // Update profile with new values
-                    // @ts-ignore - Supabase types not generated
-                    const { error: updateError } = await supabase.from('profiles').upsert({
-                        id: user.id,
-                        first_name: user.profile?.firstName || '',
-                        last_name: user.profile?.lastName || '',
-                        avatar_url: user.profile?.avatar || '',
-                        reports_submitted: newReportsCount,
-                        points: newPoints
-                    }, { onConflict: 'id' });
+                    if (currentProfile && !fetchError) {
+                        // Profile exists - update it
+                        const currentDbPoints = (currentProfile as any)?.points || 0;
+                        const currentDbReports = (currentProfile as any)?.reports_submitted || 0;
+                        newPoints = currentDbPoints + 20;
+                        newReportsCount = currentDbReports + 1;
 
-                    if (updateError) {
-                        console.error('Profile update error:', updateError);
+                        console.log('Updating existing profile:', { currentDbPoints, newPoints, newReportsCount });
+
+                        // @ts-ignore - Supabase types not generated
+                        const { error: updateError } = await supabase
+                            .from('profiles')
+                            .update({
+                                points: newPoints,
+                                reports_submitted: newReportsCount
+                            })
+                            .eq('id', user.id);
+
+                        if (updateError) {
+                            console.error('Profile update error:', updateError);
+                        } else {
+                            console.log('Profile updated successfully, new points:', newPoints);
+                        }
                     } else {
-                        console.log('Profile updated successfully, new points:', newPoints);
+                        // Profile doesn't exist - create it with initial 20 points
+                        newPoints = 20;
+                        newReportsCount = 1;
+
+                        console.log('Creating new profile with points:', newPoints);
+
+                        // @ts-ignore - Supabase types not generated
+                        const { error: insertError } = await supabase
+                            .from('profiles')
+                            .insert({
+                                id: user.id,
+                                first_name: user.profile?.firstName || '',
+                                last_name: user.profile?.lastName || '',
+                                avatar_url: user.profile?.avatar || '',
+                                points: newPoints,
+                                reports_submitted: newReportsCount,
+                                reports_resolved: 0
+                            });
+
+                        if (insertError) {
+                            console.error('Profile insert error:', insertError);
+                        } else {
+                            console.log('Profile created successfully with points:', newPoints);
+                        }
                     }
 
                     // Update local user state immediately for real-time UI update
@@ -344,7 +371,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                         }
                     });
                 } catch (profileError) {
-                    console.warn('Profile update failed (non-fatal):', profileError);
+                    console.error('Profile update failed:', profileError);
                 }
             }
 

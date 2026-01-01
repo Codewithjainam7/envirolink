@@ -292,55 +292,80 @@ export const useAppStore = create<AppState>((set, get) => ({
 
             // Update user stats if logged in (non-fatal if fails) - Award 20 points per report
             if (user && !newReport.isAnonymous) {
-                try {
-                    console.log('Attempting to update points via RPC for user:', user.id);
+                // OPTIMISTIC UPDATE: Update local state immediately for instant feedback
+                const optimisticPoints = (user.engagement?.points || 0) + 20;
+                const optimisticCount = (user.engagement?.totalReports || 0) + 1;
 
-                    // Use RPC function to atomically increment points
-                    // @ts-ignore - Supabase types don't know about custom RPC functions
-                    const { error: rpcError } = await (supabase as any).rpc('increment_points', {
-                        row_id: user.id,
-                        points_to_add: 20
-                    });
+                // Show success immediately with new points
+                toast.success(`You earned 20 points! Total: ${optimisticPoints} 🎉`, { duration: 4000, icon: '🎉' });
 
-                    if (rpcError) {
-                        console.error('RPC update failed:', rpcError);
-                        // Fallback: try manual update if RPC doesn't exist yet
-                        console.log('Falling back to manual update...');
+                // Update store immediately
+                set({
+                    user: {
+                        ...user,
+                        engagement: {
+                            ...user.engagement,
+                            points: optimisticPoints,
+                            totalReports: optimisticCount,
+                            resolvedReports: user.engagement?.resolvedReports || 0,
+                            badges: user.engagement?.badges || [],
+                            rank: user.engagement?.rank || 'New Reporter',
+                        }
+                    }
+                });
 
-                        // First, try to get existing profile
-                        const { data: currentProfile } = await supabase
-                            .from('profiles')
-                            .select('points, reports_submitted')
-                            .eq('id', user.id)
-                            .single();
+                // Perform DB update in background
+                (async () => {
+                    try {
+                        console.log('Attempting to update points via RPC for user:', user.id);
 
-                        let newPoints = ((currentProfile as any)?.points || 0) + 20;
-                        let newCount = ((currentProfile as any)?.reports_submitted || 0) + 1;
-
-                        const { error: updateError } = await (supabase.from('profiles') as any).upsert({
-                            id: user.id,
-                            points: newPoints,
-                            reports_submitted: newCount,
-                            updated_at: new Date().toISOString()
+                        // Use RPC function to atomically increment points
+                        // @ts-ignore - Supabase types don't know about custom RPC functions
+                        const { error: rpcError } = await (supabase as any).rpc('increment_points', {
+                            row_id: user.id,
+                            points_to_add: 20
                         });
 
-                        if (updateError) {
-                            console.error('Manual fallback failed:', updateError);
-                            toast.error('Could not update points');
+                        if (rpcError) {
+                            console.error('RPC update failed:', rpcError);
+                            // Fallback: try manual update if RPC doesn't exist yet
+                            console.log('Falling back to manual update...');
+
+                            // First, try to get existing profile
+                            const { data: currentProfile } = await supabase
+                                .from('profiles')
+                                .select('points, reports_submitted')
+                                .eq('id', user.id)
+                                .single();
+
+                            let newPoints = ((currentProfile as any)?.points || 0) + 20;
+                            let newCount = ((currentProfile as any)?.reports_submitted || 0) + 1;
+
+                            const { error: updateError } = await (supabase.from('profiles') as any).upsert({
+                                id: user.id,
+                                points: newPoints,
+                                reports_submitted: newCount,
+                                updated_at: new Date().toISOString()
+                            });
+
+                            if (updateError) {
+                                console.error('Manual fallback failed:', updateError);
+                                toast.error('Could not update points');
+                            } else {
+                                toast.success(`You earned 20 points! 🎉`, { duration: 4000 });
+                            }
                         } else {
+                            console.log('Points updated successfully via RPC');
                             toast.success(`You earned 20 points! 🎉`, { duration: 4000 });
                         }
-                    } else {
-                        console.log('Points updated successfully via RPC');
-                        toast.success(`You earned 20 points! 🎉`, { duration: 4000 });
+
+                        // Refresh profile data immediately
+                        await get().refreshProfile();
+
+                    } catch (profileError) {
+                        console.error('Profile sync failed:', profileError);
                     }
-
-                    // Refresh profile data immediately
-                    await get().refreshProfile();
-
-                } catch (profileError) {
-                    console.error('Profile update failed:', profileError);
-                }
+                })();
             }
 
             // Refresh reports

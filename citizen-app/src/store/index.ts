@@ -293,89 +293,50 @@ export const useAppStore = create<AppState>((set, get) => ({
             // Update user stats if logged in (non-fatal if fails) - Award 20 points per report
             if (user && !newReport.isAnonymous) {
                 try {
-                    console.log('Attempting to update points for user:', user.id);
+                    console.log('Attempting to update points via RPC for user:', user.id);
 
-                    // First, try to get existing profile
-                    // @ts-ignore - Supabase types not generated
-                    const { data: currentProfile, error: fetchError } = await supabase
-                        .from('profiles')
-                        .select('points, reports_submitted')
-                        .eq('id', user.id)
-                        .single();
+                    // Use RPC function to atomically increment points
+                    const { error: rpcError } = await supabase.rpc('increment_points', {
+                        row_id: user.id,
+                        points_to_add: 20
+                    });
 
-                    console.log('Current profile fetch result:', { currentProfile, fetchError });
+                    if (rpcError) {
+                        console.error('RPC update failed:', rpcError);
+                        // Fallback: try manual update if RPC doesn't exist yet
+                        console.log('Falling back to manual update...');
 
-                    let newPoints: number;
-                    let newReportsCount: number;
+                        // First, try to get existing profile
+                        const { data: currentProfile } = await supabase
+                            .from('profiles')
+                            .select('points, reports_submitted')
+                            .eq('id', user.id)
+                            .single();
 
-                    if (currentProfile && !fetchError) {
-                        // Profile exists - update it
-                        const currentDbPoints = (currentProfile as any)?.points || 0;
-                        const currentDbReports = (currentProfile as any)?.reports_submitted || 0;
-                        newPoints = currentDbPoints + 20;
-                        newReportsCount = currentDbReports + 1;
+                        let newPoints = ((currentProfile as any)?.points || 0) + 20;
+                        let newCount = ((currentProfile as any)?.reports_submitted || 0) + 1;
 
-                        console.log('Updating existing profile:', { currentDbPoints, newPoints, newReportsCount });
-
-                        // @ts-ignore - Supabase types not generated
-                        const { error: updateError } = await (supabase
-                            .from('profiles') as any)
-                            .update({
-                                points: newPoints,
-                                reports_submitted: newReportsCount
-                            })
-                            .eq('id', user.id);
+                        const { error: updateError } = await (supabase.from('profiles') as any).upsert({
+                            id: user.id,
+                            points: newPoints,
+                            reports_submitted: newCount,
+                            updated_at: new Date().toISOString()
+                        });
 
                         if (updateError) {
-                            console.error('Profile update error:', updateError);
-                            toast.error('Failed to update points');
+                            console.error('Manual fallback failed:', updateError);
+                            toast.error('Could not update points');
                         } else {
-                            console.log('Profile updated successfully, new points:', newPoints);
-                            toast.success(`You earned 20 points! Total: ${newPoints}`, { duration: 4000, icon: '🎉' });
+                            toast.success(`You earned 20 points! 🎉`, { duration: 4000 });
                         }
                     } else {
-                        // Profile doesn't exist - create it with initial 20 points
-                        newPoints = 20;
-                        newReportsCount = 1;
-
-                        console.log('Creating new profile with points:', newPoints);
-
-                        // @ts-ignore - Supabase types not generated
-                        const { error: insertError } = await (supabase
-                            .from('profiles') as any)
-                            .insert({
-                                id: user.id,
-                                first_name: user.profile?.firstName || '',
-                                last_name: user.profile?.lastName || '',
-                                avatar_url: user.profile?.avatar || '',
-                                points: newPoints,
-                                reports_submitted: newReportsCount,
-                                reports_resolved: 0
-                            });
-
-                        if (insertError) {
-                            console.error('Profile insert error:', insertError);
-                            toast.error('Failed to initialize points');
-                        } else {
-                            console.log('Profile created successfully with points:', newPoints);
-                            toast.success(`You earned your first 20 points! 🎉`, { duration: 4000 });
-                        }
+                        console.log('Points updated successfully via RPC');
+                        toast.success(`You earned 20 points! 🎉`, { duration: 4000 });
                     }
 
-                    // Update local user state immediately for real-time UI update
-                    set({
-                        user: {
-                            ...user,
-                            engagement: {
-                                ...user.engagement,
-                                points: newPoints,
-                                totalReports: newReportsCount,
-                                resolvedReports: user.engagement?.resolvedReports || 0,
-                                badges: user.engagement?.badges || [],
-                                rank: user.engagement?.rank || 'New Reporter',
-                            }
-                        }
-                    });
+                    // Refresh profile data immediately
+                    await get().refreshProfile();
+
                 } catch (profileError) {
                     console.error('Profile update failed:', profileError);
                 }

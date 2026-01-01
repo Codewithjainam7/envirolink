@@ -296,7 +296,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                     console.log('Attempting to update points via RPC for user:', user.id);
 
                     // Use RPC function to atomically increment points
-                    const { error: rpcError } = await supabase.rpc('increment_points', {
+                    // @ts-ignore - Supabase types don't know about custom RPC functions
+                    const { error: rpcError } = await (supabase as any).rpc('increment_points', {
                         row_id: user.id,
                         points_to_add: 20
                     });

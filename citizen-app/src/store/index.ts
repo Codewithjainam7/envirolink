@@ -44,6 +44,7 @@ interface AppState {
     fetchUserReports: () => Promise<void>;
     initializeAuth: () => Promise<void>;
     refreshProfile: () => Promise<void>;
+    logout: () => Promise<void>;
 }
 
 const initialNewReport = {
@@ -544,6 +545,26 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
         } catch (error) {
             console.error('Error refreshing profile:', error);
+        }
+    },
+
+    // Sign out
+    logout: async () => {
+        try {
+            const supabase = getSupabase();
+            await supabase.auth.signOut();
+            set({
+                user: null,
+                isAuthenticated: false,
+                userReports: [],
+                selectedReport: null
+            });
+            // Clear local storage if needed
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('app-storage');
+            }
+        } catch (error) {
+            console.error('Logout failed:', error);
         }
     },
 }));

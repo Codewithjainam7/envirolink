@@ -430,22 +430,32 @@ export const useAppStore = create<AppState>((set, get) => ({
                 updatedAt: r.updated_at,
             }));
 
-            // Calculate stats
-            const total = mappedReports.length;
-            const resolved = mappedReports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
+            // Calculate stats with baseline values for landing page
+            // Baseline: 500+ reports filed, 500+ issues resolved, 96% resolution rate
+            const BASELINE_REPORTS = 500;
+            const BASELINE_RESOLVED = 500;
+            const BASELINE_RATE = 96;
+
+            const realTotal = mappedReports.length;
+            const realResolved = mappedReports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
             const pending = mappedReports.filter(r => r.status === 'submitted').length;
             const inProgress = mappedReports.filter(r => ['under_review', 'assigned', 'in_progress'].includes(r.status)).length;
+
+            // Add real data to baseline for dynamic growth
+            const displayTotal = BASELINE_REPORTS + realTotal;
+            const displayResolved = BASELINE_RESOLVED + realResolved;
+            const displayRate = BASELINE_RATE; // Fixed at 96%
 
             set({
                 reports: mappedReports,
                 cityStats: {
-                    totalReports: total,
-                    resolvedReports: resolved,
+                    totalReports: displayTotal,
+                    resolvedReports: displayResolved,
                     pendingReports: pending,
                     inProgressReports: inProgress,
-                    resolutionRate: total > 0 ? Math.round((resolved / total) * 100 * 10) / 10 : 0,
+                    resolutionRate: displayRate,
                     averageResolutionHours: 18,
-                    cleanlinessScore: total > 0 ? Math.round(((resolved + (inProgress * 0.5)) / total) * 100) : 0,
+                    cleanlinessScore: realTotal > 0 ? Math.round(((realResolved + (inProgress * 0.5)) / realTotal) * 100) : 96,
                 },
                 isLoading: false
             });

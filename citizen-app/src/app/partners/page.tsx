@@ -55,7 +55,7 @@ export default function PartnersPage() {
                 <div className="bg-emerald-600 text-white p-8 rounded-3xl text-center">
                     <h3 className="text-2xl font-bold mb-4">Become a Partner</h3>
                     <p className="text-emerald-100 mb-6">Join us in our mission to create cleaner, greener cities.</p>
-                    <a href="mailto:partners@envirolink.in" className="inline-block bg-white text-emerald-600 px-8 py-3 rounded-xl font-semibold hover:bg-emerald-50 transition-colors">
+                    <a href="mailto:envirolink.in@gmail.com" className="inline-block bg-white text-emerald-600 px-8 py-3 rounded-xl font-semibold hover:bg-emerald-50 transition-colors">
                         Contact Us
                     </a>
                 </div>

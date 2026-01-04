@@ -68,8 +68,8 @@ export default function ContactPage() {
                                     </div>
                                     <div>
                                         <p className="font-semibold text-gray-900">Email</p>
-                                        <a href="mailto:support@envirolink.in" className="text-emerald-600 hover:underline">
-                                            support@envirolink.in
+                                        <a href="mailto:envirolink.in@gmail.com" className="text-emerald-600 hover:underline">
+                                            envirolink.in@gmail.com
                                         </a>
                                     </div>
                                 </div>

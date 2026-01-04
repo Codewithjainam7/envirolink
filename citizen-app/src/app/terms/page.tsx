@@ -99,7 +99,7 @@ export default function TermsPage() {
 
                     <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-xl mt-8">
                         <p className="text-emerald-800 font-medium">Questions about our Terms?</p>
-                        <p className="text-emerald-700">Contact us at legal@envirolink.in</p>
+                        <p className="text-emerald-700">Contact us at envirolink.in@gmail.com</p>
                     </div>
                 </motion.div>
             </div>

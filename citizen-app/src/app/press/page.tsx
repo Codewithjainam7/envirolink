@@ -62,8 +62,8 @@ export default function PressPage() {
                 <div className="bg-emerald-50 p-8 rounded-2xl text-center">
                     <h3 className="text-xl font-bold text-gray-900 mb-2">Media Inquiries</h3>
                     <p className="text-gray-600 mb-4">For press and media inquiries, please contact:</p>
-                    <a href="mailto:press@envirolink.in" className="text-emerald-600 font-semibold hover:underline">
-                        press@envirolink.in
+                    <a href="mailto:envirolink.in@gmail.com" className="text-emerald-600 font-semibold hover:underline">
+                        envirolink.in@gmail.com
                     </a>
                 </div>
             </div>

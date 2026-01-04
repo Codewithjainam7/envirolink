@@ -55,7 +55,7 @@ export default function HelpPage() {
                     <div className="bg-white p-6 rounded-2xl text-center">
                         <Mail size={32} className="text-emerald-600 mx-auto mb-4" />
                         <h3 className="font-bold text-gray-900 mb-2">Email</h3>
-                        <a href="mailto:support@envirolink.in" className="text-emerald-600 hover:underline">support@envirolink.in</a>
+                        <a href="mailto:envirolink.in@gmail.com" className="text-emerald-600 hover:underline">envirolink.in@gmail.com</a>
                     </div>
                     <div className="bg-white p-6 rounded-2xl text-center">
                         <Phone size={32} className="text-emerald-600 mx-auto mb-4" />

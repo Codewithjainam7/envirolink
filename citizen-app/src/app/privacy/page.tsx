@@ -109,7 +109,7 @@ export default function PrivacyPage() {
                         </p>
                         <div className="bg-gray-50 p-4 rounded-lg mt-4">
                             <p className="text-gray-800 font-medium">ENVIROLINK Privacy Team</p>
-                            <p className="text-gray-600">Email: privacy@envirolink.in</p>
+                            <p className="text-gray-600">Email: envirolink.in@gmail.com</p>
                             <p className="text-gray-600">Phone: +91 98765 43210</p>
                         </div>
                     </section>

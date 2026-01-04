@@ -76,8 +76,8 @@ export default function ApiDocsPage() {
                 <div className="mt-8 bg-emerald-50 p-6 rounded-2xl text-center">
                     <h3 className="font-bold text-gray-900 mb-2">Need an API Key?</h3>
                     <p className="text-gray-600 mb-4">Contact us to get started with the ENVIROLINK API.</p>
-                    <a href="mailto:api@envirolink.in" className="text-emerald-600 font-semibold hover:underline">
-                        api@envirolink.in
+                    <a href="mailto:envirolink.in@gmail.com" className="text-emerald-600 font-semibold hover:underline">
+                        envirolink.in@gmail.com
                     </a>
                 </div>
             </div>

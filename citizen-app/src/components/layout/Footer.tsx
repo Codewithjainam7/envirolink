@@ -57,9 +57,9 @@ export default function Footer() {
 
                         {/* Contact Info */}
                         <div className="space-y-2">
-                            <a href="mailto:hello@envirolink.in" className="flex items-center gap-2 text-sm hover:text-emerald-400 transition-colors">
+                            <a href="mailto:envirolink.in@gmail.com" className="flex items-center gap-2 text-sm hover:text-emerald-400 transition-colors">
                                 <Mail size={14} />
-                                hello@envirolink.in
+                                envirolink.in@gmail.com
                             </a>
                             <a href="tel:+919876543210" className="flex items-center gap-2 text-sm hover:text-emerald-400 transition-colors">
                                 <Phone size={14} />

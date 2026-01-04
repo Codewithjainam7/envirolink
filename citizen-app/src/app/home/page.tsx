@@ -279,15 +279,15 @@ export default function HomePage() {
                             <motion.div variants={itemVariants} className="grid grid-cols-3 gap-4 sm:gap-8 mt-12">
                                 {(() => {
                                     // Helper function to round down to nearest 5 and add "+"
-                                    const formatStat = (value: number) => {
+                                    const formatRounded = (value: number) => {
                                         const rounded = Math.floor(value / 5) * 5;
                                         return `${rounded}+`;
                                     };
 
                                     return [
-                                        { value: formatStat(cityStats.totalReports), label: 'Reports Filed', icon: FileText },
-                                        { value: formatStat(cityStats.resolvedReports), label: 'Issues Resolved', icon: CheckCircle2 },
-                                        { value: `${cityStats.resolutionRate.toFixed(0)}%`, label: 'Resolution Rate', icon: TrendingUp },
+                                        { value: cityStats.totalReports, label: 'Reports Filed', icon: FileText, isNumber: true },
+                                        { value: formatRounded(cityStats.resolvedReports), label: 'Issues Resolved', icon: CheckCircle2, isNumber: false },
+                                        { value: `${cityStats.resolutionRate.toFixed(0)}%`, label: 'Resolution Rate', icon: TrendingUp, isNumber: false },
                                     ].map((stat, i) => {
                                         const Icon = stat.icon;
                                         return (
@@ -295,7 +295,7 @@ export default function HomePage() {
                                                 <div className="flex items-center justify-center gap-1 sm:gap-2 mb-1">
                                                     <Icon size={20} className="text-emerald-500 flex-shrink-0" />
                                                     <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">
-                                                        {stat.value}
+                                                        {stat.isNumber ? <AnimatedCounter value={stat.value as number} /> : stat.value}
                                                     </span>
                                                 </div>
                                                 <p className="text-xs sm:text-sm text-gray-500 text-center">{stat.label}</p>

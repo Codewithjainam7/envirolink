@@ -2,9 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const OPENROUTER_MODEL = 'nvidia/nemotron-3.5-super-vl:free';
 
-function normalizeImageDataUrl(raw: string): string {
-    if (raw.startsWith('data:image/') || raw.startsWith('http://') || raw.startsWith('https://')) {
+async function toBase64DataUrl(raw: string): Promise<string | null> {
+    if (!raw) return null;
+    if (raw.startsWith('data:image/')) {
         return raw;
+    }
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        try {
+            const imgRes = await fetch(raw, { signal: AbortSignal.timeout(8000) });
+            if (!imgRes.ok) return null;
+            const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+            const buf = Buffer.from(await imgRes.arrayBuffer());
+            return `data:${contentType.split(';')[0]};base64,${buf.toString('base64')}`;
+        } catch {
+            return null;
+        }
     }
     return `data:image/jpeg;base64,${raw}`;
 }
@@ -65,16 +77,27 @@ RESPOND IN JSON FORMAT ONLY (no markdown):
   "reason": "Brief explanation"
 }`;
 
+        const proofDataUrl = await toBase64DataUrl(proofImage);
+        if (!proofDataUrl) {
+            return NextResponse.json(
+                { isResolved: false, message: 'Could not process proof image. Please re-upload and try again.' },
+                { status: 400 }
+            );
+        }
+
         const content: any[] = [
             { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: normalizeImageDataUrl(proofImage) } },
+            { type: 'image_url', image_url: { url: proofDataUrl } },
         ];
 
         if (originalImage) {
-            content.push({
-                type: 'image_url',
-                image_url: { url: normalizeImageDataUrl(originalImage) },
-            });
+            const origDataUrl = await toBase64DataUrl(originalImage);
+            if (origDataUrl) {
+                content.push({
+                    type: 'image_url',
+                    image_url: { url: origDataUrl },
+                });
+            }
         }
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {

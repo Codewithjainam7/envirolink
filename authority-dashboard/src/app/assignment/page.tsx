@@ -63,11 +63,12 @@ export default function AIAssignmentPage() {
             console.log('Fetched pending reports:', reportsData?.length || 0);
             setPendingReports(reportsData || []);
 
-            // Fetch available workers
+            // Fetch available workers (newest first so newly added workers appear at the top)
             const { data: workersData, error: workersError } = await supabase
                 .from('workers')
-                .select('id, first_name, last_name, zone, phone, status')
-                .in('status', ['approved', 'active', 'available']);
+                .select('id, first_name, last_name, zone, phone, status, joined_at')
+                .in('status', ['approved', 'active', 'available'])
+                .order('joined_at', { ascending: false });
 
             if (workersError) {
                 console.error('Error fetching workers:', workersError);
@@ -298,8 +299,8 @@ export default function AIAssignmentPage() {
                                                     <Zap size={14} className="text-emerald-500" />
                                                     Available Workers
                                                 </p>
-                                                <div className="space-y-2">
-                                                    {availableWorkers.slice(0, 5).map(worker => (
+                                                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                                    {availableWorkers.map(worker => (
                                                         <button
                                                             key={worker.id}
                                                             onClick={() => handleManualAssign(report.id, worker)}

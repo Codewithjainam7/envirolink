@@ -44,7 +44,15 @@ const severityOptions = [
 ];
 
 // Detail Modal Component
-function ReportDetailModal({ report, onClose }: { report: Report; onClose: () => void }) {
+function ReportDetailModal({
+    report,
+    onClose,
+    onAssign,
+}: {
+    report: Report;
+    onClose: () => void;
+    onAssign?: (report: Report) => void;
+}) {
     const category = WASTE_CATEGORIES[report.category] || { label: report.category, color: '#6b7280', icon: 'Trash2' };
     const status = STATUS_CONFIG[report.status] || { label: report.status, color: '#6b7280', bgColor: '#f3f4f6' };
     const severity = SEVERITY_CONFIG[report.severity] || { label: report.severity, color: '#6b7280' };
@@ -279,8 +287,11 @@ function ReportDetailModal({ report, onClose }: { report: Report; onClose: () =>
                     >
                         Close
                     </button>
-                    {!report.assignedTo && (
-                        <button className="px-5 py-2.5 bg-emerald-500 text-white rounded-xl font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2 shadow-lg shadow-emerald-500/20">
+                    {!report.assignedTo && onAssign && (
+                        <button
+                            onClick={() => onAssign(report)}
+                            className="px-5 py-2.5 bg-emerald-500 text-white rounded-xl font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2 shadow-lg shadow-emerald-500/20"
+                        >
                             <UserPlus size={18} />
                             Assign Worker
                         </button>
@@ -462,13 +473,14 @@ export default function ReportsPage() {
         advancedFilters.dateTo ||
         advancedFilters.slaBreachOnly;
 
-    // Fetch available workers for assignment
+    // Fetch available workers for assignment (newest first)
     const fetchWorkers = async () => {
         const supabase = createClient();
         const { data, error } = await supabase
             .from('workers')
-            .select('id, first_name, last_name, zone, phone, status')
-            .in('status', ['approved', 'active', 'available']);
+            .select('id, first_name, last_name, zone, phone, status, joined_at')
+            .in('status', ['approved', 'active', 'available'])
+            .order('joined_at', { ascending: false });
 
         if (!error && data) {
             setAvailableWorkers(data);
@@ -750,6 +762,12 @@ export default function ReportsPage() {
                     <ReportDetailModal
                         report={selectedReport}
                         onClose={() => setSelectedReport(null)}
+                        onAssign={async (r) => {
+                            setSelectedReports([r.id]);
+                            setSelectedReport(null);
+                            await fetchWorkers();
+                            setShowAssignModal(true);
+                        }}
                     />
                 )}
             </AnimatePresence>

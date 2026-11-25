@@ -48,6 +48,7 @@ interface AppState {
     trackReport: (reportId: string) => Promise<Report | null>;
     removeTrackedReport: (id: string) => void;
     deleteReport: (report: Report) => Promise<boolean>;
+    updateProfileName: (firstName: string, lastName: string) => Promise<boolean>;
     initializeAuth: () => Promise<void>;
     refreshProfile: () => Promise<void>;
     logout: () => Promise<void>;
@@ -102,6 +103,67 @@ function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Pro
         Promise.resolve(promise),
         new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
     ]);
+}
+
+// Acquire user access token quickly without blocking indefinitely on Web navigator.locks
+async function getFastAccessToken(supabase: ReturnType<typeof getSupabase>): Promise<string | null> {
+    try {
+        const res = await withTimeout(supabase.auth.getSession(), 1500, 'Session token') as any;
+        if (res?.data?.session?.access_token) return res.data.session.access_token;
+    } catch {
+        // Fallback to parsing the Supabase SSR auth cookie directly
+    }
+    if (typeof document !== 'undefined') {
+        try {
+            const cookies = document.cookie.split(';').map(c => c.trim());
+            const baseCookie = cookies.find(c => /^sb-[^-]+-auth-token=/.test(c));
+            const chunkCookies = cookies
+                .filter(c => /^sb-[^-]+-auth-token\.\d+=/.test(c))
+                .sort((a, b) => Number(a.split('=')[0].split('.').pop()) - Number(b.split('=')[0].split('.').pop()));
+            let raw = baseCookie
+                ? baseCookie.split('=').slice(1).join('=')
+                : chunkCookies.map(c => c.split('=').slice(1).join('=')).join('');
+            if (raw) {
+                raw = decodeURIComponent(raw);
+                if (raw.startsWith('base64-')) raw = atob(raw.slice(7));
+                const parsed = JSON.parse(raw);
+                if (parsed?.access_token) return parsed.access_token;
+            }
+        } catch {}
+    }
+    return null;
+}
+
+async function restInsert<T = any>(
+    table: string,
+    payload: Record<string, any>,
+    accessToken?: string | null,
+    timeoutMs = 15000,
+    prefer = 'return=representation'
+): Promise<{ data: T | null; error: string | null }> {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const res = await fetch(`${url}/rest/v1/${table}?select=*`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+            'Content-Type': 'application/json',
+            apikey: anonKey,
+            Authorization: `Bearer ${accessToken || anonKey}`,
+            Prefer: prefer,
+        },
+        body: JSON.stringify(payload),
+    });
+    const text = await res.text();
+    let parsed: any = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch {}
+    if (!res.ok) {
+        return {
+            data: null,
+            error: parsed?.message || parsed?.error_description || text || `HTTP ${res.status}`,
+        };
+    }
+    return { data: Array.isArray(parsed) ? parsed[0] : parsed, error: null };
 }
 
 function saveLocalCachedReport(report: Report) {
@@ -500,22 +562,11 @@ export const useAppStore = create<AppState>((set, get) => ({
                 }
             }
 
-            // Verify active Supabase session when submitting non-anonymously
-            let effectiveUserId: string | null = null;
-            if (!newReport.isAnonymous && user?.id) {
-                try {
-                    const { data: sessionData } = await withTimeout(
-                        supabase.auth.getSession(),
-                        5000,
-                        'Session check'
-                    ) as any;
-                    effectiveUserId = sessionData?.session?.user?.id || user.id;
-                } catch {
-                    effectiveUserId = user.id;
-                }
-            }
+            // Acquire token without navigator.locks deadlock and insert via direct REST
+            const accessToken = await getFastAccessToken(supabase);
+            const effectiveUserId: string | null = (!newReport.isAnonymous && user?.id) ? user.id : null;
 
-            // 1. Insert report into Supabase with 20s timeout (never silently fake success locally)
+            // 1. Insert report into Supabase directly (bypasses browser client lock timeouts)
             let reportData: any = null;
             const basePayload = {
                 report_id: generatedReportId,
@@ -534,43 +585,40 @@ export const useAppStore = create<AppState>((set, get) => ({
                 sla_due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
             };
 
-            let { data, error: reportError } = await withTimeout(
-                supabase.from('reports').insert(basePayload as any).select().single(),
-                20000,
-                'Report insert'
-            );
+            let { data, error: reportError } = await restInsert('reports', basePayload, accessToken, 15000);
 
             // Propagate anti-fraud DB trigger blocks directly to UI
-            if (reportError && /duplicate|already submitted|50m|trust/i.test(reportError.message || '')) {
-                toast.error(reportError.message, { id: 'report-submit-error', duration: 5000 });
-                throw new Error(reportError.message);
+            if (reportError && /duplicate|already submitted|50m|trust/i.test(reportError)) {
+                toast.error(reportError, { id: 'report-submit-error', duration: 5000 });
+                throw new Error(reportError);
             }
 
             // Retry cleanly if DB rejects extended category enum or missing profile FK / RLS user_id mismatch
             if (reportError) {
-                console.warn('Primary report insert error, trying safe schema fallback:', reportError.message);
+                console.warn('Primary report insert error, trying safe schema fallback:', reportError);
                 const safeCategory = CORE_CATEGORIES.has(basePayload.category as string)
                     ? basePayload.category
                     : 'illegal_dumping';
                 const categoryNote = safeCategory !== basePayload.category
                     ? `[${String(basePayload.category).replace(/_/g, ' ')}] `
                     : '';
-                const shouldClearUser = /foreign key|profiles|row-level security|jwt|auth/i.test(reportError.message || '');
+                const shouldClearUser = /foreign key|profiles|row-level security|jwt|auth|expired/i.test(reportError);
 
-                const retryRes = await withTimeout(
-                    supabase.from('reports').insert({
+                const retryRes = await restInsert(
+                    'reports',
+                    {
                         ...basePayload,
                         user_id: shouldClearUser ? null : basePayload.user_id,
                         is_anonymous: shouldClearUser ? true : basePayload.is_anonymous,
                         category: safeCategory,
                         description: `${categoryNote}${basePayload.description}`,
-                    } as any).select().single(),
-                    15000,
-                    'Report retry insert'
+                    },
+                    shouldClearUser ? null : accessToken,
+                    15000
                 );
 
                 if (retryRes.error) {
-                    const errMsg = `Database error saving report: ${retryRes.error.message}`;
+                    const errMsg = `Database error saving report: ${retryRes.error}`;
                     toast.error(errMsg, { id: 'report-submit-error', duration: 5000 });
                     throw new Error(errMsg);
                 }
@@ -588,10 +636,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             const effectiveId = reportData?.id || fallbackId;
             const effectiveReportId = reportData?.report_id || generatedReportId;
 
-            // 2. Upload images in parallel with 10s timeout per image
+            // 2. Upload images in parallel directly via REST (lock-free)
             let finalImages: { id: string; url: string; thumbnailUrl: string; uploadedAt: string }[] = [];
 
             if (newReport.images.length > 0) {
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+                const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
                 finalImages = await Promise.all(
                     newReport.images.map(async (imageUrl, i) => {
                         let publicUrl = imageUrl;
@@ -610,27 +661,30 @@ export const useAppStore = create<AppState>((set, get) => ({
                                     bytes[j] = binaryString.charCodeAt(j);
                                 }
 
-                                const { data: uploadData } = await withTimeout(
-                                    supabase.storage.from('report-images').upload(fileName, bytes, { contentType: mimeType }),
-                                    10000,
-                                    `Image ${i + 1} upload`
-                                );
+                                const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/report-images/${fileName}`, {
+                                    method: 'POST',
+                                    signal: AbortSignal.timeout(15000),
+                                    headers: {
+                                        'Content-Type': mimeType,
+                                        apikey: anonKey,
+                                        Authorization: `Bearer ${accessToken || anonKey}`,
+                                    },
+                                    body: bytes,
+                                });
 
-                                if (uploadData) {
-                                    const { data: { publicUrl: storageUrl } } = supabase.storage
-                                        .from('report-images')
-                                        .getPublicUrl(fileName);
-                                    publicUrl = storageUrl;
+                                if (uploadRes.ok) {
+                                    publicUrl = `${supabaseUrl}/storage/v1/object/public/report-images/${fileName}`;
 
-                                    await withTimeout(
-                                        (supabase.from('report_images') as any).insert({
+                                    await restInsert(
+                                        'report_images',
+                                        {
                                             report_id: effectiveId,
                                             url: publicUrl,
                                             storage_path: fileName,
                                             image_hash: newReport.imageHashes?.[i] || null,
-                                        }),
-                                        5000,
-                                        'Report image DB insert'
+                                        },
+                                        accessToken,
+                                        10000
                                     );
                                 }
                             } catch (imgError) {
@@ -1087,6 +1141,62 @@ export const useAppStore = create<AppState>((set, get) => ({
         } catch (err: any) {
             console.warn('Delete report error:', err?.message || err);
             toast.error(err?.message || 'Failed to delete report');
+            return false;
+        }
+    },
+
+    // Update citizen display name in Supabase profiles & local state
+    updateProfileName: async (firstName: string, lastName: string): Promise<boolean> => {
+        const { user } = get();
+        if (!user) return false;
+        const cleanFirst = firstName.trim();
+        const cleanLast = lastName.trim();
+        if (!cleanFirst) {
+            toast.error('First name cannot be empty');
+            return false;
+        }
+
+        try {
+            const supabase = getSupabase();
+            const accessToken = await getFastAccessToken(supabase);
+            const { error } = await restInsert(
+                'profiles',
+                {
+                    id: user.id,
+                    first_name: cleanFirst,
+                    last_name: cleanLast,
+                    updated_at: new Date().toISOString(),
+                },
+                accessToken,
+                10000,
+                'resolution=merge-duplicates,return=representation'
+            );
+
+            if (error) {
+                toast.error(`Failed to update name: ${error}`);
+                return false;
+            }
+
+            // Keep Auth metadata synced best-effort
+            const fullName = `${cleanFirst} ${cleanLast}`.trim();
+            supabase.auth.updateUser({
+                data: { full_name: fullName, first_name: cleanFirst, last_name: cleanLast }
+            }).catch(() => {});
+
+            set({
+                user: {
+                    ...user,
+                    profile: {
+                        ...user.profile,
+                        firstName: cleanFirst,
+                        lastName: cleanLast,
+                    },
+                },
+            });
+            toast.success('Profile name updated!');
+            return true;
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to update name');
             return false;
         }
     },

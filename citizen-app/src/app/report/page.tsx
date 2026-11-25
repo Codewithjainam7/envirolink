@@ -839,7 +839,11 @@ export default function ReportPage() {
                                     <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3 text-red-800">
                                         <AlertTriangle size={18} className="text-red-600 flex-shrink-0 mt-0.5" />
                                         <div className="text-sm">
-                                            <p className="font-bold">Submission Blocked (Anti-Fraud Check)</p>
+                                            <p className="font-bold">
+                                                {/duplicate|already exists|already been submitted|trust score|restricted/i.test(submitError)
+                                                    ? 'Submission Blocked (Anti-Fraud Check)'
+                                                    : 'Submission Failed'}
+                                            </p>
                                             <p className="mt-0.5">{submitError}</p>
                                         </div>
                                     </div>

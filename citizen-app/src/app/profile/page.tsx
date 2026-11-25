@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
     LogOut, User, Shield, FileText, Plus, Search,
-    RefreshCw, CheckCircle2, Clock, AlertCircle, Loader2
+    RefreshCw, CheckCircle2, Clock, AlertCircle, Loader2, Pencil, Check, X
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { toast } from 'react-hot-toast';
@@ -23,6 +23,7 @@ export default function ProfilePage() {
         fetchUserReports,
         trackReport,
         deleteReport,
+        updateProfileName,
         refreshProfile,
         selectedReport,
         setSelectedReport
@@ -33,6 +34,10 @@ export default function ProfilePage() {
     const [activeTab, setActiveTab] = useState<'all' | 'open' | 'in_progress' | 'resolved'>('all');
     const [isTracking, setIsTracking] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [firstNameInput, setFirstNameInput] = useState('');
+    const [lastNameInput, setLastNameInput] = useState('');
+    const [isSavingName, setIsSavingName] = useState(false);
 
     useEffect(() => {
         setMounted(true);
@@ -82,6 +87,22 @@ export default function ProfilePage() {
             return;
         }
         await deleteReport(report);
+    };
+
+    const startEditingName = () => {
+        setFirstNameInput(user?.profile?.firstName || '');
+        setLastNameInput(user?.profile?.lastName || '');
+        setIsEditingName(true);
+    };
+
+    const handleSaveName = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        setIsSavingName(true);
+        const ok = await updateProfileName(firstNameInput, lastNameInput);
+        setIsSavingName(false);
+        if (ok) {
+            setIsEditingName(false);
+        }
     };
 
     const handleLogout = async () => {
@@ -164,9 +185,57 @@ export default function ProfilePage() {
 
                             <div className="min-w-0">
                                 <div className="flex items-center gap-2.5 flex-wrap">
-                                    <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 truncate">
-                                        {`${user.profile?.firstName || 'User'} ${user.profile?.lastName || ''}`.trim()}
-                                    </h1>
+                                    {isEditingName ? (
+                                        <form onSubmit={handleSaveName} className="flex items-center gap-2 flex-wrap">
+                                            <input
+                                                type="text"
+                                                value={firstNameInput}
+                                                onChange={(e) => setFirstNameInput(e.target.value)}
+                                                placeholder="First name"
+                                                required
+                                                className="px-3 py-1.5 text-sm font-semibold text-gray-900 bg-white border-2 border-emerald-300 rounded-xl focus:outline-none focus:border-emerald-500 w-32 sm:w-36"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={lastNameInput}
+                                                onChange={(e) => setLastNameInput(e.target.value)}
+                                                placeholder="Last name"
+                                                className="px-3 py-1.5 text-sm font-semibold text-gray-900 bg-white border-2 border-emerald-300 rounded-xl focus:outline-none focus:border-emerald-500 w-32 sm:w-36"
+                                            />
+                                            <button
+                                                type="submit"
+                                                disabled={isSavingName}
+                                                title="Save Name"
+                                                className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white transition-colors disabled:opacity-50"
+                                            >
+                                                {isSavingName ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={isSavingName}
+                                                onClick={() => setIsEditingName(false)}
+                                                title="Cancel"
+                                                className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
+                                            >
+                                                <X size={15} />
+                                            </button>
+                                        </form>
+                                    ) : (
+                                        <>
+                                            <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 truncate">
+                                                {`${user.profile?.firstName || 'User'} ${user.profile?.lastName || ''}`.trim()}
+                                            </h1>
+                                            <button
+                                                type="button"
+                                                onClick={startEditingName}
+                                                title="Edit Name"
+                                                aria-label="Edit Name"
+                                                className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                                            >
+                                                <Pencil size={16} />
+                                            </button>
+                                        </>
+                                    )}
                                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
                                         <Shield size={13} />
                                         {points} pts

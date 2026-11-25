@@ -1,32 +1,58 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { MapPin, Clock, ChevronRight, Trash2, PackageOpen, Wind, HardHat, Cpu, Leaf, LucideIcon } from 'lucide-react';
+import {
+    MapPin, Clock, ChevronRight, Trash2, PackageOpen, Wind, HardHat, Cpu, Leaf,
+    Droplets, Bug, Flame, Car, FileWarning, Zap, LucideIcon
+} from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { Report, WasteCategory, STATUS_CONFIG, WASTE_CATEGORIES } from '@/types';
-import clsx from 'clsx';
+import { Report, STATUS_CONFIG, WASTE_CATEGORIES } from '@/types';
 
-// Icon mapping
-const categoryIcons: Record<WasteCategory, LucideIcon> = {
+// Icon mapping supporting all citizen reporting categories
+const categoryIcons: Record<string, LucideIcon> = {
     illegal_dumping: Trash2,
     overflowing_bin: PackageOpen,
     littering: Wind,
     construction_debris: HardHat,
     e_waste: Cpu,
     organic_waste: Leaf,
+    sewage_overflow: Droplets,
+    dead_animal: Bug,
+    burning_waste: Flame,
+    abandoned_vehicle: Car,
+    hazardous_material: FileWarning,
+    electrical_hazard: Zap,
+};
+
+const categoryFallbacks: Record<string, { label: string; color: string }> = {
+    sewage_overflow: { label: 'Sewage Overflow', color: '#06b6d4' },
+    dead_animal: { label: 'Dead Animal', color: '#84cc16' },
+    burning_waste: { label: 'Burning Waste', color: '#dc2626' },
+    abandoned_vehicle: { label: 'Abandoned Vehicle', color: '#6366f1' },
+    hazardous_material: { label: 'Hazardous Material', color: '#eab308' },
+    electrical_hazard: { label: 'Electrical Hazard', color: '#f43f5e' },
 };
 
 interface ReportCardProps {
     report: Report;
     onClick?: () => void;
+    onDelete?: (report: Report) => void;
     variant?: 'default' | 'compact';
 }
 
-export default function ReportCard({ report, onClick, variant = 'default' }: ReportCardProps) {
-    const category = WASTE_CATEGORIES[report.category];
-    const statusConfig = STATUS_CONFIG[report.status];
+export default function ReportCard({ report, onClick, onDelete, variant = 'default' }: ReportCardProps) {
+    const category = WASTE_CATEGORIES[report.category] ||
+        categoryFallbacks[report.category] || {
+            label: report.category ? report.category.replace(/_/g, ' ') : 'Waste Issue',
+            color: '#10b981',
+        };
+    const statusConfig = STATUS_CONFIG[report.status] || {
+        label: report.status ? report.status.replace(/_/g, ' ') : 'Submitted',
+        color: '#3b82f6',
+        bgColor: 'rgba(59, 130, 246, 0.1)',
+    };
     const timeAgo = formatDistanceToNow(new Date(report.createdAt), { addSuffix: true });
-    const CategoryIcon = categoryIcons[report.category];
+    const CategoryIcon = categoryIcons[report.category] || Trash2;
 
     if (variant === 'compact') {
         return (
@@ -114,13 +140,29 @@ export default function ReportCard({ report, onClick, variant = 'default' }: Rep
                     {statusConfig.label}
                 </motion.div>
 
-                {/* Category Icon Badge */}
-                <motion.div
-                    className="absolute top-3 right-3 w-10 h-10 rounded-xl bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-lg"
-                    whileHover={{ scale: 1.1, rotate: 10 }}
-                >
-                    <CategoryIcon size={20} style={{ color: '#059669' }} strokeWidth={2} />
-                </motion.div>
+                {/* Category Icon Badge & Optional Delete */}
+                <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                    {onDelete && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete(report);
+                            }}
+                            title="Delete report"
+                            aria-label="Delete report"
+                            className="w-9 h-9 rounded-xl bg-white/90 hover:bg-red-50 text-gray-500 hover:text-red-600 backdrop-blur-sm flex items-center justify-center shadow-lg transition-colors"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                    )}
+                    <motion.div
+                        className="w-10 h-10 rounded-xl bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-lg"
+                        whileHover={{ scale: 1.1, rotate: 10 }}
+                    >
+                        <CategoryIcon size={20} style={{ color: '#059669' }} strokeWidth={2} />
+                    </motion.div>
+                </div>
             </div>
 
             {/* Content */}
@@ -139,9 +181,28 @@ export default function ReportCard({ report, onClick, variant = 'default' }: Rep
                     <span className="truncate block">{report.location?.address || 'Location not specified'}</span>
                 </div>
 
-                <div className="flex items-center gap-2 text-xs text-gray-400">
-                    <Clock size={12} className="flex-shrink-0" />
-                    <span>{timeAgo}</span>
+                <div className="flex items-center justify-between gap-2 text-xs text-gray-400">
+                    <span className="flex items-center gap-1.5">
+                        <Clock size={12} className="flex-shrink-0" />
+                        <span>{timeAgo}</span>
+                    </span>
+                    {report.id?.startsWith('local-') ? (
+                        <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold border border-gray-200">
+                            Local only · Not synced
+                        </span>
+                    ) : report.status === 'rejected' ? (
+                        <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-semibold border border-red-100">
+                            0 pts · Rejected
+                        </span>
+                    ) : (report.pointsAwarded || report.status === 'resolved' || report.status === 'closed') ? (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100">
+                            +20 pts earned
+                        </span>
+                    ) : !report.isAnonymous ? (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold border border-amber-100">
+                            Pending +20 pts
+                        </span>
+                    ) : null}
                 </div>
 
                 {/* Progress indicator for in_progress */}

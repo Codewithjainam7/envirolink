@@ -1,5 +1,5 @@
 // Shared Types with Citizen App
-export type ReportStatus = 'submitted' | 'under_review' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
+export type ReportStatus = 'submitted' | 'under_review' | 'assigned' | 'in_progress' | 'resolved' | 'closed' | 'rejected';
 export type WasteCategory = 'illegal_dumping' | 'overflowing_bin' | 'littering' | 'construction_debris' | 'e_waste' | 'organic_waste' | 'hazardous_waste';
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -31,6 +31,8 @@ export interface Report {
     slaHours: number;
     slaDueAt: string;
     isSlaBreach: boolean;
+    requiresReview?: boolean;
+    rejectionReason?: string;
     createdAt: string;
     updatedAt: string;
 }
@@ -71,6 +73,7 @@ export const STATUS_CONFIG: Record<ReportStatus, { label: string; variant: strin
     in_progress: { label: 'In Progress', variant: 'progress', color: '#3b82f6', bgColor: '#dbeafe' },
     resolved: { label: 'Resolved', variant: 'resolved', color: '#10b981', bgColor: '#d1fae5' },
     closed: { label: 'Closed', variant: 'resolved', color: '#6b7280', bgColor: '#f3f4f6' },
+    rejected: { label: 'Rejected', variant: 'rejected', color: '#dc2626', bgColor: '#fee2e2' },
 };
 
 export const SEVERITY_CONFIG: Record<Severity, { label: string; color: string }> = {

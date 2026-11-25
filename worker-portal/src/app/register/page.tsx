@@ -132,12 +132,15 @@ export default function RegisterPage() {
         setLoading(true);
         setError(null);
 
+        const cleanEmail = formData.email.trim().toLowerCase();
+
         try {
             // First create the auth user
             const { data: authData, error: authError } = await supabase.auth.signUp({
-                email: formData.email,
+                email: cleanEmail,
                 password: formData.password,
                 options: {
+                    emailRedirectTo: `${window.location.origin}/auth/callback`,
                     data: {
                         first_name: formData.firstName,
                         last_name: formData.lastName,
@@ -163,7 +166,7 @@ export default function RegisterPage() {
                         user_id: authData.user.id, // Link to auth user
                         first_name: formData.firstName,
                         last_name: formData.lastName,
-                        email: formData.email,
+                        email: cleanEmail,
                         phone: formData.phone,
                         address: formData.address,
                         zone: formData.zone,

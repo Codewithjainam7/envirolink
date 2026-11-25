@@ -1,115 +1,154 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function POST(request: NextRequest) {
-    console.log('--- Analyze Image API Request Started ---');
+const VALID_CATEGORIES = new Set([
+    'illegal_dumping',
+    'overflowing_bin',
+    'littering',
+    'construction_debris',
+    'e_waste',
+    'organic_waste',
+    'sewage_overflow',
+    'dead_animal',
+    'burning_waste',
+    'abandoned_vehicle',
+    'hazardous_material',
+    'electrical_hazard',
+]);
 
-    // Get API keys from environment
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+const OPENROUTER_MODEL = 'nvidia/nemotron-3.5-super-vl:free';
+
+export async function POST(request: NextRequest) {
+    console.log('--- Analyze Image API Request Started (OpenRouter Nemotron 3.5 Super VL) ---');
+
+    const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
     const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
     try {
         const body = await request.json();
         const { imageBase64 } = body;
 
-        if (!imageBase64) {
-            return NextResponse.json({ error: 'No image provided' }, { status: 400 });
+        if (!imageBase64 || typeof imageBase64 !== 'string') {
+            return NextResponse.json(
+                { isWasteRelated: false, rejectionReason: 'No image provided' },
+                { status: 400 }
+            );
         }
 
-        // Clean base64 string
-        const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        // Extract actual MIME type and base64 payload
+        let mimeType = 'image/jpeg';
+        let base64Data = imageBase64;
+        const dataUrlMatch = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+        if (dataUrlMatch) {
+            mimeType = dataUrlMatch[1];
+            base64Data = dataUrlMatch[2];
+        } else {
+            base64Data = imageBase64.replace(/^data:[^;]+;base64,/, '');
+        }
 
-        // Simple, clear prompt for waste detection
-        const PROMPT = `Analyze this image for environmental waste/garbage.
+        const PROMPT = `You are a strict civic waste-reporting image validator for a municipal waste management platform (EnviroLink).
 
-Return ONLY a JSON object (no markdown):
+TASK: Determine if this image genuinely shows a real-world environmental waste, sanitation, or civic hazard issue in a public/outdoor/community setting.
+
+Return ONLY a valid JSON object (no markdown):
 {
   "is_waste": true/false,
-  "category": "littering" | "illegal_dumping" | "overflowing_bin" | "construction_debris" | "organic_waste" | "sewage_overflow" | "hazardous_material" | "other",
+  "category": "illegal_dumping" | "overflowing_bin" | "littering" | "construction_debris" | "e_waste" | "organic_waste" | "sewage_overflow" | "dead_animal" | "burning_waste" | "abandoned_vehicle" | "hazardous_material" | "electrical_hazard" | "none",
   "confidence": 0-100,
-  "description": "one sentence description"
+  "description": "one concise sentence describing the waste issue visible",
+  "rejection_reason": "if is_waste is false, short polite explanation of what is in the image and why it is rejected"
 }
 
-Categories:
-- littering: scattered trash, bottles, wrappers
-- illegal_dumping: large piles of garbage  
-- overflowing_bin: full trash bins
-- construction_debris: building materials, rubble
-- organic_waste: food waste, garden waste
-- sewage_overflow: dirty water, leaked sewage
-- hazardous_material: chemicals, medical waste
-- other: any other waste type
+ACCEPTED ISSUES (is_waste = true):
+- illegal_dumping: garbage piles, trash bags dumped on streets/plots
+- overflowing_bin: overflowing public dustbin/dumpster
+- littering: scattered wrappers, plastic bottles, trash on roads/parks/beaches
+- construction_debris: rubble, bricks, concrete, construction waste left in public
+- e_waste: discarded electronics, wires, broken appliances dumped outdoors
+- organic_waste: rotting food/market/garden waste piles outdoors
+- sewage_overflow: overflowing drains, sewage water, clogged gutters
+- dead_animal: animal carcass on road/public space
+- burning_waste: open burning of trash/garbage
+- abandoned_vehicle: rusted/abandoned junk vehicle left in public space
+- hazardous_material: chemical drums, medical/biomedical waste dumped
+- electrical_hazard: fallen/exposed live wires or damaged street electrical box
 
-If no waste visible, set is_waste to false.`;
+STRICT REJECTION RULES (MUST set is_waste = false):
+- Photos of computer/phone screens or monitors (moiré pixel grid, screen bezels, UI bars, web pages)
+- Stock photos with watermarks, news graphics, text overlays, memes, screenshots, or collages
+- Selfies, portraits, faces, or people posing without waste as the clear subject
+- Living pets/animals, indoor rooms, clean streets/parks/nature with no visible garbage
+- Food on plates/tables, laptops/phones/electronics in normal indoor use
+- Graphic logos, icons, drawings, cartoons, blank/blurry/black images
+- Any random photo unrelated to real-world civic waste or sanitation issues`;
 
-        let result = null;
+        let result: any = null;
 
-        // Try Gemini 2.0 Flash first
-        if (GEMINI_API_KEY && !result) {
+        // Primary: OpenRouter NVIDIA Nemotron 3.5 Super VL (free)
+        if (OPENROUTER_API_KEY && !result) {
             try {
-                console.log('Trying Gemini 2.0 Flash...');
+                console.log(`Calling OpenRouter (${OPENROUTER_MODEL})...`);
 
-                const response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{
-                                parts: [
-                                    { text: PROMPT },
-                                    { inlineData: { mimeType: "image/jpeg", data: base64Data } }
-                                ]
-                            }],
-                            generationConfig: {
-                                temperature: 0.1,
-                                maxOutputTokens: 1024
-                            }
-                        })
-                    }
-                );
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    signal: AbortSignal.timeout(35000),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+                        'HTTP-Referer': request.nextUrl.origin || 'http://localhost:3000',
+                        'X-Title': 'EnviroLink Citizen App',
+                    },
+                    body: JSON.stringify({
+                        model: OPENROUTER_MODEL,
+                        reasoning: { enabled: false },
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    { type: 'text', text: PROMPT },
+                                    { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } },
+                                ],
+                            },
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 300,
+                    }),
+                });
 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('Gemini response received');
-
-                    let aiText = '';
-                    if (data.candidates?.[0]?.content?.parts) {
-                        for (const part of data.candidates[0].content.parts) {
-                            if (part.text) aiText += part.text;
-                        }
-                    }
+                    const message = data.choices?.[0]?.message;
+                    const aiText = message?.content || '';
+                    console.log('OpenRouter response received:', aiText);
 
                     if (aiText) {
                         const jsonMatch = aiText.match(/\{[\s\S]*\}/);
                         if (jsonMatch) {
                             result = JSON.parse(jsonMatch[0]);
-                            console.log('Gemini parsed result:', result);
                         }
                     }
                 } else {
-                    console.error('Gemini failed:', await response.text());
+                    console.error('OpenRouter failed:', response.status, await response.text());
                 }
             } catch (e) {
-                console.error('Gemini error:', e);
+                console.error('OpenRouter error:', e);
             }
         }
 
-        // Fallback to Groq if Gemini failed
+        // Optional fallback to Groq if configured and OpenRouter failed
         if (GROQ_API_KEY && !result) {
-            // Use new Llama 4 vision models (old 3.2 models are decommissioned)
-            const groqModels = ['meta-llama/llama-4-scout-17b-16e-instruct', 'meta-llama/llama-4-maverick-17b-128e-instruct'];
+            const groqModels = [
+                'meta-llama/llama-4-scout-17b-16e-instruct',
+                'meta-llama/llama-4-maverick-17b-128e-instruct',
+            ];
 
             for (const groqModel of groqModels) {
                 if (result) break;
-
                 try {
-                    console.log(`Trying Groq ${groqModel}...`);
-
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${GROQ_API_KEY}`
+                            'Authorization': `Bearer ${GROQ_API_KEY}`,
                         },
                         body: JSON.stringify({
                             model: groqModel,
@@ -118,32 +157,22 @@ If no waste visible, set is_waste to false.`;
                                     role: 'user',
                                     content: [
                                         { type: 'text', text: PROMPT },
-                                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Data}` } }
-                                    ]
-                                }
+                                        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } },
+                                    ],
+                                },
                             ],
                             temperature: 0.1,
-                            max_tokens: 1024
-                        })
+                            max_tokens: 512,
+                        }),
                     });
 
                     if (response.ok) {
                         const data = await response.json();
-                        console.log('Groq response received');
-
                         const aiText = data.choices?.[0]?.message?.content || '';
-                        console.log('Groq AI text:', aiText);
-
-                        if (aiText) {
-                            const jsonMatch = aiText.match(/\{[\s\S]*\}/);
-                            if (jsonMatch) {
-                                result = JSON.parse(jsonMatch[0]);
-                                console.log('Groq parsed result:', result);
-                            }
+                        const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            result = JSON.parse(jsonMatch[0]);
                         }
-                    } else {
-                        const errText = await response.text();
-                        console.error(`Groq ${groqModel} failed:`, errText);
                     }
                 } catch (e) {
                     console.error(`Groq ${groqModel} error:`, e);
@@ -151,37 +180,41 @@ If no waste visible, set is_waste to false.`;
             }
         }
 
+        // Strict verification: never accept unverified/random images if AI could not verify
         if (!result) {
-            console.warn('All AI models failed, returning fallback');
+            console.warn('AI verification unavailable - rejecting unverified upload');
             return NextResponse.json({
-                isWasteRelated: true,
-                isAppropriate: true,
+                isWasteRelated: false,
+                isAppropriate: false,
                 topCategories: [],
                 confidence: 0,
-                description: 'AI analysis failed - please select category manually',
-                rejectionReason: ''
-            });
+                description: '',
+                rejectionReason: 'Unable to verify waste in this image right now. Please try again with a clear photo of the waste issue.',
+            }, { status: 503 });
         }
 
-        // Return standardized response
-        return NextResponse.json({
-            isAppropriate: true,
-            isWasteRelated: result.is_waste === true,
-            topCategories: result.is_waste ? [result.category || 'littering'] : [],
-            confidence: result.confidence || 80,
-            description: result.description || 'Analyzed successfully',
-            rejectionReason: result.is_waste ? '' : 'No waste detected in image'
-        });
+        const isWaste = result.is_waste === true && Number(result.confidence ?? 80) >= 50;
+        const normalizedCategory = VALID_CATEGORIES.has(result.category) ? result.category : 'littering';
 
-    } catch (error: any) {
-        console.error('API Error:', error);
         return NextResponse.json({
-            isWasteRelated: true,
-            isAppropriate: true,
+            isAppropriate: isWaste,
+            isWasteRelated: isWaste,
+            topCategories: isWaste ? [normalizedCategory] : [],
+            confidence: Number(result.confidence ?? 80),
+            description: isWaste ? (result.description || 'Waste issue detected') : '',
+            rejectionReason: isWaste
+                ? ''
+                : (result.rejection_reason || 'Image rejected — please upload a photo showing real-world waste, garbage, or a civic sanitation issue.'),
+        });
+    } catch (error: any) {
+        console.error('Analyze Image API Error:', error);
+        return NextResponse.json({
+            isWasteRelated: false,
+            isAppropriate: false,
             topCategories: [],
             confidence: 0,
-            description: 'Error occurred - please proceed manually',
-            rejectionReason: ''
-        });
+            description: '',
+            rejectionReason: 'Failed to analyze image. Please upload a valid waste photo and try again.',
+        }, { status: 500 });
     }
 }

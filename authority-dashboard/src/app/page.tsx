@@ -262,13 +262,29 @@ export default function DashboardPage() {
     setMounted(true);
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
-    // Fetch reports on mount and every 30 seconds
+    // Fetch reports on mount, every 15s, on window focus, and via Supabase Realtime
     fetchReports();
-    const reportTimer = setInterval(fetchReports, 30000);
+    const reportTimer = setInterval(fetchReports, 15000);
+    const onFocus = () => fetchReports();
+    window.addEventListener('focus', onFocus);
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel('authority-dashboard-reports')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reports' },
+        () => {
+          fetchReports();
+        }
+      )
+      .subscribe();
 
     return () => {
       clearInterval(timer);
       clearInterval(reportTimer);
+      window.removeEventListener('focus', onFocus);
+      supabase.removeChannel(channel);
     };
   }, []);
 

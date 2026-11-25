@@ -220,6 +220,8 @@ export default function SettingsPage() {
                                                 <option>English</option>
                                                 <option>Hindi</option>
                                                 <option>Marathi</option>
+                                                <option>Bhojpuri</option>
+                                                <option>Marwadi</option>
                                             </select>
                                         </div>
                                         <div className="space-y-2">

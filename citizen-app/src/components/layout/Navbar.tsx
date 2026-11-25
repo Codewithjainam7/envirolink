@@ -23,17 +23,20 @@ export default function Navbar() {
     const pathname = usePathname();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [showTranslate, setShowTranslate] = useState(false);
-    const { user, isAuthenticated, initializeAuth } = useAppStore();
+    const { user, isAuthenticated, initializeAuth, userReports, fetchUserReports } = useAppStore();
 
     // Initialize auth on mount
     useEffect(() => {
         initializeAuth();
-    }, [initializeAuth]);
+        fetchUserReports();
+    }, [initializeAuth, fetchUserReports]);
 
     const languages = [
         { code: 'en', name: 'English' },
         { code: 'hi', name: 'हिंदी (Hindi)' },
         { code: 'mr', name: 'मराठी (Marathi)' },
+        { code: 'bho', name: 'भोजपुरी (Bhojpuri)' },
+        { code: 'mwr', name: 'मारवाड़ी (Marwadi)' },
         { code: 'ta', name: 'தமிழ் (Tamil)' },
         { code: 'te', name: 'తెలుగు (Telugu)' },
         { code: 'bn', name: 'বাংলা (Bengali)' },
@@ -51,7 +54,7 @@ export default function Navbar() {
             document.body.appendChild(script);
             (window as any).googleTranslateElementInit = () => {
                 new (window as any).google.translate.TranslateElement(
-                    { pageLanguage: 'en', includedLanguages: 'hi,mr,ta,te,bn,gu,kn,ml,pa,ur,en', layout: (window as any).google.translate.TranslateElement.InlineLayout.SIMPLE, autoDisplay: false },
+                    { pageLanguage: 'en', includedLanguages: 'hi,mr,bho,mwr,ta,te,bn,gu,kn,ml,pa,ur,en', layout: (window as any).google.translate.TranslateElement.InlineLayout.SIMPLE, autoDisplay: false },
                     'google_translate_element'
                 );
             };
@@ -87,25 +90,25 @@ export default function Navbar() {
             <div className="max-w-7xl mx-auto px-4 lg:px-8">
                 <div className="flex items-center justify-between h-16 lg:h-20">
                     {/* Logo */}
-                    <Link href="/home" className="flex items-center gap-2 group">
+                    <Link href="/home" className="flex items-center gap-2 group flex-shrink-0">
                         <motion.img
                             src="/images/envirolink-icon.png"
                             alt=""
-                            className="h-12 w-12 sm:h-14 sm:w-14 lg:h-16 lg:w-16 object-contain"
+                            className="h-10 w-10 sm:h-12 sm:w-12 lg:h-14 lg:w-14 object-contain"
                             whileHover={{ rotate: 360 }}
                             transition={{ duration: 0.6 }}
                         />
                         <motion.img
                             src="/images/envirolink-logo.png"
                             alt="ENVIROLINK"
-                            className="h-6 sm:h-7 lg:h-8 max-w-[120px] sm:max-w-[150px] lg:max-w-[180px] w-auto object-contain"
+                            className="h-5 sm:h-6 lg:h-7 max-w-[110px] sm:max-w-[130px] lg:max-w-[150px] w-auto object-contain"
                             whileHover={{ scale: 1.02 }}
                             transition={{ duration: 0.3 }}
                         />
                     </Link>
 
                     {/* Desktop Navigation */}
-                    <nav className="hidden lg:flex items-center gap-1">
+                    <nav className="hidden lg:flex items-center gap-0.5 xl:gap-1">
                         {navLinks.map((link) => {
                             const isActive = pathname === link.href;
                             const Icon = link.icon;
@@ -114,7 +117,7 @@ export default function Navbar() {
                                     key={link.href}
                                     href={link.href}
                                     className={clsx(
-                                        'relative px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center gap-2',
+                                        'relative px-2.5 xl:px-3.5 py-2 rounded-xl font-medium text-xs xl:text-sm transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap',
                                         isActive
                                             ? 'text-emerald-600'
                                             : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -127,23 +130,28 @@ export default function Navbar() {
                                             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                                         />
                                     )}
-                                    <Icon size={16} className="relative z-10" />
+                                    <Icon size={15} className="relative z-10 flex-shrink-0" />
                                     <span className="relative z-10">{link.label}</span>
+                                    {link.href === '/profile' && userReports.length > 0 && (
+                                        <span className="relative z-10 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                            {userReports.length}
+                                        </span>
+                                    )}
                                 </Link>
                             );
                         })}
                     </nav>
 
                     {/* Right Section */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                         {/* Report Button */}
                         <Link href="/report">
                             <motion.button
                                 whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
-                                className="hidden sm:flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold text-sm rounded-xl transition-all"
+                                className="hidden sm:flex items-center gap-2 px-4 xl:px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold text-xs xl:text-sm rounded-xl transition-all whitespace-nowrap"
                             >
-                                <Plus size={18} />
+                                <Plus size={16} />
                                 Report Issue
                             </motion.button>
                         </Link>
@@ -203,7 +211,10 @@ export default function Navbar() {
                                     <p className="text-sm font-semibold text-gray-900">
                                         {user.profile?.firstName || user.email?.split('@')[0] || 'User'}
                                     </p>
-                                    <p className="text-xs text-gray-500">{user.engagement?.points || 0} pts</p>
+                                    <p className="text-xs text-gray-500">
+                                        {user.engagement?.points || 0} pts
+                                        {userReports.length > 0 ? ` · ${userReports.length} reports` : ''}
+                                    </p>
                                 </div>
                             </Link>
                         ) : (
@@ -212,7 +223,7 @@ export default function Navbar() {
                                     <motion.button
                                         whileHover={{ scale: 1.02 }}
                                         whileTap={{ scale: 0.98 }}
-                                        className="flex items-center gap-2 px-6 py-2.5 bg-emerald-500 text-white font-semibold text-sm rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"
+                                        className="flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-emerald-500 text-white font-semibold text-xs sm:text-sm rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20 whitespace-nowrap"
                                     >
                                         <LogIn size={18} />
                                         <span className="hidden sm:inline">Sign In</span>
@@ -256,10 +267,31 @@ export default function Navbar() {
                                 )}
                             >
                                 <Icon size={20} />
-                                {link.label}
+                                <span className="flex-1">{link.label}</span>
                             </Link>
                         );
                     })}
+
+                    {user && (
+                        <Link
+                            href="/profile"
+                            onClick={() => setMobileMenuOpen(false)}
+                            className={clsx(
+                                'flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all',
+                                pathname === '/profile'
+                                    ? 'bg-emerald-50 text-emerald-600'
+                                    : 'text-gray-700 hover:bg-gray-100'
+                            )}
+                        >
+                            <User size={20} />
+                            <span className="flex-1">Profile &amp; My Reports</span>
+                            {userReports.length > 0 && (
+                                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                                    {userReports.length}
+                                </span>
+                            )}
+                        </Link>
+                    )}
 
                     {/* Mobile Report Button */}
                     <Link

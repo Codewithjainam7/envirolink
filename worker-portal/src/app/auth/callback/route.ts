@@ -4,6 +4,11 @@ import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
     const { searchParams, origin } = new URL(request.url)
+    const forwardedHost = request.headers.get('x-forwarded-host')
+    const forwardedProto = request.headers.get('x-forwarded-proto') || 'https'
+    const baseUrl = (process.env.NODE_ENV !== 'development' && forwardedHost)
+        ? `${forwardedProto}://${forwardedHost}`
+        : origin
     const code = searchParams.get('code')
     const next = searchParams.get('next') ?? '/'
 
@@ -37,35 +42,35 @@ export async function GET(request: Request) {
             const { data: worker, error: workerError } = await supabase
                 .from('workers')
                 .select('status')
-                .eq('email', authData.user.email)
-                .single()
+                .ilike('email', authData.user.email || '')
+                .maybeSingle()
 
             if (workerError || !worker) {
                 // No worker profile - redirect to login with error
                 await supabase.auth.signOut()
-                return NextResponse.redirect(`${origin}/login?error=no-worker-profile`)
+                return NextResponse.redirect(`${baseUrl}/login?error=no-worker-profile`)
             }
 
             if (worker.status === 'pending_approval') {
                 await supabase.auth.signOut()
-                return NextResponse.redirect(`${origin}/login?error=pending-approval`)
+                return NextResponse.redirect(`${baseUrl}/login?error=pending-approval`)
             }
 
             if (worker.status === 'rejected') {
                 await supabase.auth.signOut()
-                return NextResponse.redirect(`${origin}/login?error=rejected`)
+                return NextResponse.redirect(`${baseUrl}/login?error=rejected`)
             }
 
             if (worker.status !== 'approved' && worker.status !== 'active') {
                 await supabase.auth.signOut()
-                return NextResponse.redirect(`${origin}/login?error=invalid-status`)
+                return NextResponse.redirect(`${baseUrl}/login?error=invalid-status`)
             }
 
             // Worker is approved - allow access
-            return NextResponse.redirect(`${origin}${next}`)
+            return NextResponse.redirect(`${baseUrl}${next}`)
         }
     }
 
     // return the user to an error page with instructions
-    return NextResponse.redirect(`${origin}/login?error=auth-code-error`)
+    return NextResponse.redirect(`${baseUrl}/login?error=auth-code-error`)
 }

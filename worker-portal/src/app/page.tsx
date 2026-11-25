@@ -52,9 +52,14 @@ export default function WorkerDashboard() {
   const [earnings, setEarnings] = useState<Earnings>({ today: 0, week: 0, month: 0 });
   const [tasksCompleted, setTasksCompleted] = useState(0);
   const [showProofModal, setShowProofModal] = useState<Task | null>(null);
+  const [proofMode, setProofMode] = useState<'resolved' | 'nothing_found'>('resolved');
   const [proofImage, setProofImage] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [workerCoords, setWorkerCoords] = useState<{ lat: number; lng: number; distanceMeters: number } | null>(null);
+  const [checkingLocation, setCheckingLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [nothingFoundReason, setNothingFoundReason] = useState('No waste found at pinned location upon arrival');
   const router = useRouter();
   const supabase = createClient();
 
@@ -71,21 +76,31 @@ export default function WorkerDashboard() {
       }
       setUser(user);
 
-      // Fetch worker profile
+      // Fetch worker profile cleanly (citizen sessions on localhost also share Supabase cookies)
       const { data: workerData, error: workerError } = await supabase
         .from('workers')
         .select('*')
-        .eq('email', user.email)
-        .single();
+        .ilike('email', user.email || '')
+        .maybeSingle();
 
       if (workerError || !workerData) {
-        console.error('Worker profile not found');
-        router.push('/login');
+        console.warn('No worker profile for session email; redirecting to worker login.');
+        router.replace('/login?error=no-worker-profile');
+        return;
+      }
+
+      if (workerData.status === 'pending_approval') {
+        router.replace('/login?error=pending-approval');
+        return;
+      }
+
+      if (workerData.status === 'rejected') {
+        router.replace('/login?error=rejected');
         return;
       }
 
       if (workerData.status !== 'approved' && workerData.status !== 'active') {
-        router.push('/login');
+        router.replace('/login?error=invalid-status');
         return;
       }
 
@@ -200,17 +215,80 @@ export default function WorkerDashboard() {
     }
   };
 
+  const getDistanceMeters = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const R = 6371000;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  };
+
+  const checkWorkerProximity = (task: Task) => {
+    if (!navigator.geolocation) {
+      setLocationError('GPS geolocation is not supported on this device.');
+      return;
+    }
+    setCheckingLocation(true);
+    setLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const dist = getDistanceMeters(
+          pos.coords.latitude,
+          pos.coords.longitude,
+          task.latitude,
+          task.longitude
+        );
+        setWorkerCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude, distanceMeters: dist });
+        if (dist > 100) {
+          setLocationError(`You are ${Math.round(dist)}m away. Move within 100m of the report pin to submit "Nothing Found".`);
+        }
+        setCheckingLocation(false);
+      },
+      (err) => {
+        setLocationError(`Unable to verify live GPS (${err.message}). Enable location access.`);
+        setCheckingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  const openProofModal = (task: Task, mode: 'resolved' | 'nothing_found') => {
+    setProofMode(mode);
+    setProofImage(null);
+    setVerificationResult(null);
+    setWorkerCoords(null);
+    setLocationError(null);
+    setNothingFoundReason('No waste found at pinned location upon arrival');
+    setShowProofModal(task);
+    if (mode === 'nothing_found') {
+      checkWorkerProximity(task);
+    }
+  };
+
   const verifyCompletion = async (task: Task) => {
     if (!proofImage) {
       alert('Please upload a proof image first');
       return;
     }
 
+    if (proofMode === 'nothing_found') {
+      if (!workerCoords || workerCoords.distanceMeters > 100) {
+        setVerificationResult({
+          success: false,
+          message: locationError || 'Live GPS verification within 100m of the report pin is required.',
+        });
+        return;
+      }
+    }
+
     setVerifying(true);
     setVerificationResult(null);
 
     try {
-      // Call AI to verify completion
+      // Call AI to verify completion or empty-spot photo
       const response = await fetch('/api/verify-completion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -218,13 +296,42 @@ export default function WorkerDashboard() {
           originalImage: task.images[0] || null,
           proofImage: proofImage,
           category: task.category,
-          description: task.description
+          description: task.description,
+          mode: proofMode,
         })
       });
 
       const result = await response.json();
 
       if (result.isResolved) {
+        if (proofMode === 'nothing_found') {
+          const distMeters = Math.round(workerCoords?.distanceMeters || 0);
+          await supabase
+            .from('reports')
+            .update({
+              status: 'rejected',
+              rejection_reason: `${nothingFoundReason} (Worker GPS verified ${distMeters}m from pin)`,
+              rejected_by_worker_id: worker?.id || null,
+              verification_status: 'false_report',
+              verified_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', task.id);
+
+          setVerificationResult({
+            success: true,
+            message: 'Empty spot verified. Report closed as rejected (no waste found).',
+          });
+
+          setTimeout(() => {
+            setTasks(tasks.filter(t => t.id !== task.id));
+            setShowProofModal(null);
+            setProofImage(null);
+            setVerificationResult(null);
+          }, 2000);
+          return;
+        }
+
         // Mark task as resolved
         await supabase
           .from('reports')
@@ -252,7 +359,7 @@ export default function WorkerDashboard() {
       } else {
         setVerificationResult({
           success: false,
-          message: result.message || 'Issue not properly resolved. Please complete the task properly and try again.'
+          message: result.message || 'Verification failed. Please ensure the photo clearly shows the site.'
         });
       }
     } catch (error) {
@@ -486,27 +593,36 @@ export default function WorkerDashboard() {
                     </button>
                   </div>
                 ) : (
-                  <div className="flex gap-3 mt-4">
-                    <div className="flex-1">
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => setShowProofModal(task)}
-                        className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-full shadow-lg hover:shadow-xl transition flex items-center justify-center gap-2"
-                      >
-                        <Camera size={20} />
-                        Complete Task
-                      </motion.button>
+                  <div className="space-y-2.5 mt-4">
+                    <div className="flex gap-3">
+                      <div className="flex-1">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => openProofModal(task, 'resolved')}
+                          className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-full shadow-lg hover:shadow-xl transition flex items-center justify-center gap-2"
+                        >
+                          <Camera size={20} />
+                          Complete Task
+                        </motion.button>
+                      </div>
+                      <Link href="/map">
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className="px-5 py-3 bg-white border-2 border-emerald-100 text-emerald-600 font-bold rounded-full hover:bg-emerald-50 transition flex items-center justify-center gap-2 shadow-sm"
+                        >
+                          <Navigation size={20} />
+                        </motion.button>
+                      </Link>
                     </div>
-                    <Link href="/map">
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="px-5 py-3 bg-white border-2 border-emerald-100 text-emerald-600 font-bold rounded-full hover:bg-emerald-50 transition flex items-center justify-center gap-2 shadow-sm"
-                      >
-                        <Navigation size={20} />
-                      </motion.button>
-                    </Link>
+                    <button
+                      onClick={() => openProofModal(task, 'nothing_found')}
+                      className="w-full py-2.5 rounded-full border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                    >
+                      <AlertTriangle size={14} />
+                      Nothing Found at Spot (GPS + Photo Proof)
+                    </button>
                   </div>
                 )}
               </motion.div>
@@ -549,7 +665,9 @@ export default function WorkerDashboard() {
               className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl"
             >
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">Complete Task</h3>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {proofMode === 'nothing_found' ? 'Report Nothing Found' : 'Complete Task'}
+                </h3>
                 <button
                   onClick={() => !verifying && setShowProofModal(null)}
                   className="p-2 hover:bg-gray-100 rounded-full transition"
@@ -559,9 +677,49 @@ export default function WorkerDashboard() {
                 </button>
               </div>
 
+              {proofMode === 'nothing_found' && (
+                <div className="mb-4 space-y-3">
+                  <div
+                    className={`p-3 rounded-xl border text-xs font-medium flex items-center justify-between gap-2 ${
+                      checkingLocation
+                        ? 'bg-gray-50 border-gray-200 text-gray-600'
+                        : workerCoords && workerCoords.distanceMeters <= 100
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                        : 'bg-red-50 border-red-200 text-red-700'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <MapPin size={14} className="shrink-0" />
+                      {checkingLocation
+                        ? 'Checking live GPS distance to pin...'
+                        : workerCoords && workerCoords.distanceMeters <= 100
+                        ? `GPS Verified (${Math.round(workerCoords.distanceMeters)}m from report pin)`
+                        : locationError || 'GPS proximity check required (within 100m).'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => showProofModal && checkWorkerProximity(showProofModal)}
+                      className="underline font-bold shrink-0"
+                    >
+                      Retry
+                    </button>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={nothingFoundReason}
+                    onChange={(e) => setNothingFoundReason(e.target.value)}
+                    placeholder="Reason (e.g., No waste found at spot)"
+                    className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-amber-400 text-gray-800"
+                  />
+                </div>
+              )}
+
               <div className="mb-6">
                 <p className="text-gray-600 mb-4">
-                  Upload a photo showing the completed work. Our AI will verify if the issue has been resolved.
+                  {proofMode === 'nothing_found'
+                    ? 'Take a clear photo of the empty/clean spot at the pin. AI + GPS will verify no waste is present.'
+                    : 'Upload a photo showing the completed work. Our AI will verify if the issue has been resolved.'}
                 </p>
 
                 <div className="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center">
@@ -608,8 +766,16 @@ export default function WorkerDashboard() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => verifyCompletion(showProofModal)}
-                disabled={!proofImage || verifying}
-                className="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                disabled={
+                  !proofImage ||
+                  verifying ||
+                  (proofMode === 'nothing_found' && (!workerCoords || workerCoords.distanceMeters > 100))
+                }
+                className={`w-full py-4 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                  proofMode === 'nothing_found'
+                    ? 'bg-gradient-to-r from-amber-500 to-red-500'
+                    : 'bg-gradient-to-r from-emerald-500 to-emerald-600'
+                }`}
               >
                 {verifying ? (
                   <>
@@ -619,7 +785,7 @@ export default function WorkerDashboard() {
                 ) : (
                   <>
                     <CheckCircle size={20} />
-                    Verify & Complete
+                    {proofMode === 'nothing_found' ? 'Verify Empty Spot & Reject' : 'Verify & Complete'}
                   </>
                 )}
               </motion.button>

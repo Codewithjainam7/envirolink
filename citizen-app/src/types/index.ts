@@ -1,5 +1,5 @@
 // Report Types
-export type ReportStatus = 'submitted' | 'under_review' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
+export type ReportStatus = 'submitted' | 'under_review' | 'assigned' | 'in_progress' | 'resolved' | 'closed' | 'rejected';
 
 export type WasteCategory =
   | 'illegal_dumping'
@@ -52,6 +52,9 @@ export interface Report {
   reporterId?: string;
   isAnonymous: boolean;
   status: ReportStatus;
+  pointsAwarded?: boolean;
+  requiresReview?: boolean;
+  rejectionReason?: string;
   statusHistory: StatusHistoryItem[];
   assignedTo?: {
     departmentId: string;
@@ -91,6 +94,8 @@ export interface User {
     badges: string[];
     points: number;
     rank: string;
+    trustScore?: number;
+    falseReportsCount?: number;
   };
   preferences: {
     notifications: {
@@ -133,4 +138,5 @@ export const STATUS_CONFIG: Record<ReportStatus, { label: string; color: string;
   in_progress: { label: 'In Progress', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.1)' },
   resolved: { label: 'Resolved', color: '#10b981', bgColor: 'rgba(16, 185, 129, 0.1)' },
   closed: { label: 'Closed', color: '#6b7280', bgColor: 'rgba(107, 114, 128, 0.1)' },
+  rejected: { label: 'Rejected', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.1)' },
 };

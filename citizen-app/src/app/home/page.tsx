@@ -9,7 +9,7 @@ import {
     BarChart3, Clock, Camera, Shield, Truck, Phone, FileText, ArrowUp, Leaf
 } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { AnimatedCounter, ReportCard, ReportForm, MapWrapper } from '@/components';
+import { AnimatedCounter, ReportCard, ReportForm, MapWrapper, ReportDetailModal } from '@/components';
 
 // Animation variants
 const containerVariants = {
@@ -83,7 +83,18 @@ function FloatingGreenBlobs() {
 }
 
 export default function HomePage() {
-    const { reports, cityStats, user, setIsReportSheetOpen, setSelectedReport, initializeAuth, fetchReports } = useAppStore();
+    const {
+        reports,
+        cityStats,
+        user,
+        setIsReportSheetOpen,
+        setSelectedReport,
+        selectedReport,
+        initializeAuth,
+        fetchReports,
+        userReports,
+        fetchUserReports
+    } = useAppStore();
     const [mounted, setMounted] = useState(false);
     const [isBooting, setIsBooting] = useState(true);
     const [showScrollTop, setShowScrollTop] = useState(false);
@@ -92,6 +103,7 @@ export default function HomePage() {
         // Initialize auth and fetch data on mount
         initializeAuth();
         fetchReports();
+        fetchUserReports();
 
         // Boot animation for 2.5 seconds
         const bootTimer = setTimeout(() => {
@@ -660,6 +672,12 @@ export default function HomePage() {
 
 
             <ReportForm />
+
+            {/* Detailed Tracking Modal */}
+            <ReportDetailModal
+                report={selectedReport}
+                onClose={() => setSelectedReport(null)}
+            />
 
             {/* Back to Top Button */}
             <AnimatePresence>

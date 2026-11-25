@@ -52,12 +52,18 @@ export default function LoginPage() {
         }
     }, []);
 
+    const getNextPath = () => {
+        if (typeof window === 'undefined') return '/report';
+        const next = new URLSearchParams(window.location.search).get('next');
+        return next && next.startsWith('/') && !next.startsWith('//') ? next : '/report';
+    };
+
     // Check if already logged in
     useEffect(() => {
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
-                router.push('/report');
+                router.push(getNextPath());
             }
         };
         checkSession();
@@ -67,10 +73,15 @@ export default function LoginPage() {
         setLoading(true);
         setError(null);
         try {
+            // Store intended post-login destination in a short-lived cookie so redirectTo stays clean
+            // and matches strict Redirect URL allowlists in Supabase for both localhost and production.
+            const nextPath = getNextPath();
+            document.cookie = `envirolink_auth_next=${encodeURIComponent(nextPath)}; path=/; max-age=600; SameSite=Lax`;
+
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    redirectTo: `${window.location.origin}/auth/callback?next=/report`,
+                    redirectTo: `${window.location.origin}/auth/callback`,
                     queryParams: {
                         access_type: 'offline',
                         prompt: 'consent',

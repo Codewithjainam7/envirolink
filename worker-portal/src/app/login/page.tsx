@@ -56,6 +56,8 @@ export default function LoginPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [needsEmailConfirm, setNeedsEmailConfirm] = useState(false);
+    const [resendMessage, setResendMessage] = useState<string | null>(null);
     const router = useRouter();
     const supabase = createClient();
 
@@ -65,7 +67,7 @@ export default function LoginPage() {
         const errorParam = params.get('error');
         if (errorParam) {
             const errorMessages: { [key: string]: string } = {
-                'no-worker-profile': 'No worker profile found. Please register first.',
+                'no-worker-profile': 'No worker profile found for this account. Sign in with an approved worker email or register as a worker below.',
                 'pending-approval': 'Your application is still pending approval. Please wait for admin approval.',
                 'rejected': 'Your application was not approved. Please contact support.',
                 'invalid-status': 'Your account status is invalid. Please contact support.',
@@ -79,19 +81,32 @@ export default function LoginPage() {
         e.preventDefault();
         setLoading(true);
         setError(null);
+        setNeedsEmailConfirm(false);
+        setResendMessage(null);
+
+        const cleanEmail = email.trim().toLowerCase();
 
         try {
-            const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-            if (authError) throw authError;
+            const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+                email: cleanEmail,
+                password,
+            });
+            if (authError) {
+                if (/email not confirmed/i.test(authError.message || '')) {
+                    setNeedsEmailConfirm(true);
+                    throw new Error('Your email is not confirmed yet. Check your inbox or click "Resend Confirmation Email" below (or turn OFF "Confirm email" in Supabase Auth settings).');
+                }
+                throw authError;
+            }
 
-            // Check worker approval status
+            // Check worker approval status (case-insensitive)
             const { data: worker, error: workerError } = await supabase
                 .from('workers')
                 .select('status')
-                .eq('email', email)
-                .single();
+                .ilike('email', cleanEmail)
+                .maybeSingle();
 
-            if (workerError) {
+            if (workerError || !worker) {
                 await supabase.auth.signOut();
                 throw new Error('No worker profile found. Please register first.');
             }
@@ -176,10 +191,29 @@ export default function LoginPage() {
                         <motion.div
                             initial={{ opacity: 0, y: -10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-600 text-sm"
+                            className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm space-y-2"
                         >
-                            <AlertCircle size={18} />
-                            {error}
+                            <div className="flex items-start gap-3">
+                                <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                                <span>{error}</span>
+                            </div>
+                            {needsEmailConfirm && email.trim() && (
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        const { error: resendErr } = await supabase.auth.resend({
+                                            type: 'signup',
+                                            email: email.trim().toLowerCase(),
+                                            options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+                                        });
+                                        setResendMessage(resendErr ? resendErr.message : 'Confirmation link resent — check your email inbox.');
+                                    }}
+                                    className="ml-7 underline font-semibold text-red-700 hover:text-red-800"
+                                >
+                                    Resend Confirmation Email
+                                </button>
+                            )}
+                            {resendMessage && <p className="ml-7 text-xs text-emerald-700 font-medium">{resendMessage}</p>}
                         </motion.div>
                     )}
 

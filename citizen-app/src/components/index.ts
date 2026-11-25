@@ -20,3 +20,4 @@ export { default as MapWrapper } from './map/MapWrapper';
 // Report Components
 export { default as ReportCard } from './report/ReportCard';
 export { default as ReportForm } from './report/ReportForm';
+export { default as ReportDetailModal } from './report/ReportDetailModal';

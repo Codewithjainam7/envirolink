@@ -6,12 +6,13 @@ import { useRouter } from 'next/navigation';
 import {
     Camera, MapPin, Mic, MicOff, Upload, CheckCircle2,
     Trash2, PackageOpen, Wind, HardHat, Cpu, Leaf, User, Phone, Mail, Send,
-    Loader2, Navigation, X, Sparkles, ChevronRight, ChevronLeft, Image,
+    Loader2, Navigation, X, Sparkles, ChevronRight, ChevronLeft, Image, Shield,
     Droplets, Bug, Flame, Car, FileWarning, Zap, AlertTriangle, Clock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAppStore } from '@/store';
-import { Report, WasteCategory } from '@/types';
+import { getSupabase } from '@/lib/supabase';
+import { Report, WasteCategory, Severity } from '@/types';
 
 const CATEGORIES = [
     { id: 'illegal_dumping', label: 'Illegal Dumping', icon: Trash2, color: '#ef4444', description: 'Unauthorized disposal of waste' },
@@ -44,6 +45,7 @@ export default function ReportPage() {
     const [currentStep, setCurrentStep] = useState(0);
     const [images, setImages] = useState<File[]>([]);
     const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+    const [imageHashes, setImageHashes] = useState<string[]>([]);
     const [category, setCategory] = useState('');
     const [severity, setSeverity] = useState('medium');
     const [description, setDescription] = useState('');
@@ -58,14 +60,22 @@ export default function ReportPage() {
     const [aiAnalysis, setAiAnalysis] = useState<{ topCategories: string[]; confidence: number; description: string } | null>(null);
     const [showAllCategories, setShowAllCategories] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitPhase, setSubmitPhase] = useState<'idle' | 'submitting' | 'success'>('idle');
+    const [submitStage, setSubmitStage] = useState(0);
+    const [submittedReportId, setSubmittedReportId] = useState('');
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     // Auth Check
-    const { isAuthenticated, isLoading } = useAppStore();
+    const { isAuthenticated, isAuthChecked, initializeAuth } = useAppStore();
     useEffect(() => {
-        if (!isLoading && !isAuthenticated) {
-            router.push('/login');
+        initializeAuth();
+    }, [initializeAuth]);
+
+    useEffect(() => {
+        if (isAuthChecked && !isAuthenticated) {
+            router.replace('/login?next=/report');
         }
-    }, [isAuthenticated, isLoading, router]);
+    }, [isAuthenticated, isAuthChecked, router]);
 
     const [voiceSupported, setVoiceSupported] = useState(true);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -104,52 +114,103 @@ export default function ReportPage() {
         );
     };
 
-    // Analyze a single image
-    const analyzeImage = async (file: File): Promise<{ valid: boolean; result?: any }> => {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = async () => {
-                try {
-                    const response = await fetch('/api/analyze-image', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ imageBase64: reader.result })
-                    });
-                    const result = await response.json();
+    const computeImageHash = async (file: File): Promise<string> => {
+        const buffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        return Array.from(new Uint8Array(hashBuffer))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+    };
 
-                    if (!result.isWasteRelated) {
-                        toast.error(result.rejectionReason || 'Image rejected - not related to waste');
-                        resolve({ valid: false });
-                    } else {
-                        resolve({ valid: true, result });
+    // Temporarily disabled for testing so the same test photo can be uploaded multiple times
+    const ENABLE_DUPLICATE_HASH_BLOCK = false;
+
+    // Analyze a single image & verify against duplicate photo hashes
+    const analyzeImage = async (
+        file: File,
+        options?: { skipDuplicateCheck?: boolean; batchHashes?: string[] }
+    ): Promise<{ valid: boolean; result?: any; imageHash?: string }> => {
+        let imageHash = '';
+        try {
+            imageHash = await computeImageHash(file);
+            if (ENABLE_DUPLICATE_HASH_BLOCK && !options?.skipDuplicateCheck) {
+                const knownHashes = options?.batchHashes || imageHashes;
+                if (knownHashes.includes(imageHash)) {
+                    toast.error('This photo is already attached to this report.');
+                    return { valid: false };
+                }
+
+                try {
+                    const supabase = getSupabase();
+                    const rpcRes = await Promise.race([
+                        (supabase as any).rpc('check_duplicate_image_hash', { p_hash: imageHash }),
+                        new Promise<{ data: null }>((res) => setTimeout(() => res({ data: null }), 2000)),
+                    ]);
+                    const dupMatches = rpcRes?.data;
+                    if (Array.isArray(dupMatches) && dupMatches.length > 0) {
+                        toast.error('Duplicate photo detected — this exact image was already submitted.');
+                        return { valid: false };
                     }
                 } catch {
-                    toast.error('Failed to analyze image');
-                    resolve({ valid: false });
+                    // Non-fatal if duplicate RPC times out or is unreachable; submitReport re-checks
                 }
-            };
-            reader.readAsDataURL(file);
-        });
+            }
+        } catch {
+            // Fallback gracefully if crypto.subtle is unavailable
+        }
+
+        try {
+            // Downscale large phone photos (~50-80 KB) before AI inspection so uploads are fast
+            const compressedBase64 = await compressImage(file, 768, 0.72);
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 40000);
+
+            try {
+                const response = await fetch('/api/analyze-image', {
+                    method: 'POST',
+                    signal: controller.signal,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ imageBase64: compressedBase64 }),
+                });
+                const result = await response.json();
+
+                if (!result.isWasteRelated) {
+                    toast.error(result.rejectionReason || 'Image rejected - not related to waste');
+                    return { valid: false };
+                }
+                return { valid: true, result, imageHash };
+            } finally {
+                clearTimeout(timer);
+            }
+        } catch (err: any) {
+            toast.error(err?.name === 'AbortError' ? 'AI verification timed out. Please try again.' : 'Failed to analyze image');
+            return { valid: false };
+        }
     };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
+        e.target.value = '';
         if (!files.length) return;
 
         setIsAnalyzing(true);
         const validImages: File[] = [...images];
         const validPreviews: string[] = [...imagePreviews];
+        const validHashes: string[] = [...imageHashes];
         let bestAnalysis: { topCategories: string[]; confidence: number; description: string } | null = aiAnalysis;
+        let addedCount = 0;
 
         // Analyze each new image
         for (const file of files) {
             if (validImages.length >= 5) break;
 
-            const { valid, result } = await analyzeImage(file);
+            const { valid, result, imageHash } = await analyzeImage(file, { batchHashes: validHashes });
 
             if (valid && result) {
                 validImages.push(file);
                 validPreviews.push(URL.createObjectURL(file));
+                if (imageHash) validHashes.push(imageHash);
+                addedCount++;
 
                 // Update AI analysis with best result (highest confidence)
                 if (!bestAnalysis || (result.confidence > bestAnalysis.confidence)) {
@@ -164,15 +225,17 @@ export default function ReportPage() {
 
         setImages(validImages);
         setImagePreviews(validPreviews);
+        setImageHashes(validHashes);
 
         if (bestAnalysis && bestAnalysis.topCategories.length > 0) {
             setAiAnalysis(bestAnalysis);
             if (!category && bestAnalysis.topCategories[0]) {
                 setCategory(bestAnalysis.topCategories[0]);
             }
-            if (validImages.length > 0) {
-                toast.success(`${validImages.length - images.length} valid image(s) added!`);
-            }
+        }
+
+        if (addedCount > 0) {
+            toast.success(`${addedCount} valid waste image(s) added!`);
         }
 
         setIsAnalyzing(false);
@@ -181,15 +244,17 @@ export default function ReportPage() {
     const removeImage = async (i: number) => {
         const newImages = images.filter((_, idx) => idx !== i);
         const newPreviews = imagePreviews.filter((_, idx) => idx !== i);
+        const newHashes = imageHashes.filter((_, idx) => idx !== i);
 
         setImages(newImages);
         setImagePreviews(newPreviews);
+        setImageHashes(newHashes);
 
         // Re-analyze if we removed images and have remaining ones
         if (newImages.length > 0 && newImages.length < images.length) {
             setIsAnalyzing(true);
             // Re-analyze first remaining image
-            const { valid, result } = await analyzeImage(newImages[0]);
+            const { valid, result } = await analyzeImage(newImages[0], { skipDuplicateCheck: true });
             if (valid && result) {
                 setAiAnalysis({
                     topCategories: result.topCategories || [],
@@ -306,19 +371,60 @@ export default function ReportPage() {
         }
     };
 
+    const compressImage = (file: File, maxDim = 1280, quality = 0.8): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const img = new window.Image();
+                img.onload = () => {
+                    try {
+                        let { width, height } = img;
+                        if (width > maxDim || height > maxDim) {
+                            if (width > height) {
+                                height = Math.round((height * maxDim) / width);
+                                width = maxDim;
+                            } else {
+                                width = Math.round((width * maxDim) / height);
+                                height = maxDim;
+                            }
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) {
+                            resolve(reader.result as string);
+                            return;
+                        }
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', quality));
+                    } catch {
+                        resolve(reader.result as string);
+                    }
+                };
+                img.onerror = () => resolve(reader.result as string);
+                img.src = reader.result as string;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    };
+
     const handleSubmit = async () => {
         if (!location || !category || !images.length) { toast.error('Complete all fields'); return; }
+        setSubmitError(null);
         setIsSubmitting(true);
+        setSubmitPhase('submitting');
+        setSubmitStage(0);
+
+        // Smooth stage progression timer during network upload
+        const stageTimer1 = setTimeout(() => setSubmitStage(prev => Math.max(prev, 1)), 450);
+        const stageTimer2 = setTimeout(() => setSubmitStage(prev => Math.max(prev, 2)), 1100);
+
         try {
-            // Convert images to base64 for Supabase storage
-            const base64Images = await Promise.all(
-                images.map(file => new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                }))
-            );
+            // Compress images client-side so upload finishes in <1s
+            const base64Images = await Promise.all(images.map(file => compressImage(file)));
+            setSubmitStage(1);
 
             // Extract locality from address
             const addressParts = location.address.split(',');
@@ -327,6 +433,7 @@ export default function ReportPage() {
             // Update store's newReport state with all form data
             updateNewReport({
                 images: base64Images,
+                imageHashes,
                 location: {
                     latitude: location.lat,
                     longitude: location.lng,
@@ -335,26 +442,36 @@ export default function ReportPage() {
                     city: 'Mumbai'
                 },
                 category: category as WasteCategory,
+                severity: severity as Severity,
                 description: description || 'No description provided',
                 isAnonymous
             });
 
             // Submit to Supabase using the store's method
             await submitReport();
+            setSubmitStage(3);
 
-            // Refresh reports to update the UI
-            await fetchReports();
+            const latestReportId = useAppStore.getState().userReports[0]?.reportId || 'R-SUBMITTED';
+            setSubmittedReportId(latestReportId);
 
             // Reset form state
             resetNewReport();
 
-            toast.success('Report submitted successfully!');
-            router.push('/home');
-        } catch (err) {
-            console.error('Submit error:', err);
-            toast.error('Failed to submit report. Please try again.');
+            // Show animated success celebration before navigating to Profile
+            setSubmitPhase('success');
+            await new Promise(resolve => setTimeout(resolve, 1600));
+            router.push('/profile');
+        } catch (err: any) {
+            const message = err?.message || 'Failed to submit report. Please try again.';
+            console.warn('Report submit blocked:', message);
+            setSubmitPhase('idle');
+            setSubmitError(message);
+            toast.error(message, { id: 'report-submit-error', duration: 5000 });
+        } finally {
+            clearTimeout(stageTimer1);
+            clearTimeout(stageTimer2);
+            setIsSubmitting(false);
         }
-        finally { setIsSubmitting(false); }
     };
 
     const canProceed = () => {
@@ -375,6 +492,31 @@ export default function ReportPage() {
             </div>
 
             <div className="relative z-10 max-w-2xl mx-auto px-3 sm:px-4 py-6 sm:py-8">
+                {/* Trust Score Advisory Banner */}
+                {user?.engagement?.trustScore !== undefined && user.engagement.trustScore < 50 && (
+                    <div
+                        className={`mb-4 rounded-2xl p-4 border flex items-start gap-3 ${
+                            user.engagement.trustScore < 20
+                                ? 'bg-red-50 border-red-200 text-red-800'
+                                : 'bg-amber-50 border-amber-200 text-amber-800'
+                        }`}
+                    >
+                        <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
+                        <div className="text-xs sm:text-sm">
+                            <p className="font-bold">
+                                {user.engagement.trustScore < 20
+                                    ? `Reporting Restricted (Trust Score: ${user.engagement.trustScore}/100)`
+                                    : `Enhanced Verification Active (Trust Score: ${user.engagement.trustScore}/100)`}
+                            </p>
+                            <p className="opacity-90 mt-0.5">
+                                {user.engagement.trustScore < 20
+                                    ? 'Your account has multiple rejected reports and cannot submit non-anonymous reports right now.'
+                                    : 'New reports will be flagged for additional authority verification.'}
+                            </p>
+                        </div>
+                    </div>
+                )}
+
                 {/* Progress Bar */}
                 <div className="mb-6 sm:mb-8">
                     <div className="flex items-center justify-between mb-3">
@@ -434,8 +576,10 @@ export default function ReportPage() {
 
                                 {isAnalyzing && (
                                     <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-3 rounded-xl">
-                                        <Loader2 className="animate-spin" size={18} />
-                                        <span className="font-medium">AI is analyzing your photo...</span>
+                                        <Loader2 className="animate-spin shrink-0" size={18} />
+                                        <span className="font-medium text-sm">
+                                            AI is analyzing your photo (usually ~20–25s on free Nemotron VL)...
+                                        </span>
                                     </div>
                                 )}
                                 {aiAnalysis && !isAnalyzing && (
@@ -691,10 +835,25 @@ export default function ReportPage() {
                                     </div>
                                 </div>
 
-                                <button onClick={handleSubmit} disabled={isSubmitting}
-                                    className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 disabled:opacity-50 hover:from-emerald-600 hover:to-emerald-700 transition shadow-lg shadow-emerald-500/30">
+                                {submitError && (
+                                    <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3 text-red-800">
+                                        <AlertTriangle size={18} className="text-red-600 flex-shrink-0 mt-0.5" />
+                                        <div className="text-sm">
+                                            <p className="font-bold">Submission Blocked (Anti-Fraud Check)</p>
+                                            <p className="mt-0.5">{submitError}</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <motion.button
+                                    whileHover={{ scale: 1.01, y: -1 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={handleSubmit}
+                                    disabled={isSubmitting}
+                                    className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 disabled:opacity-50 hover:from-emerald-600 hover:to-emerald-700 transition shadow-lg shadow-emerald-500/30"
+                                >
                                     {isSubmitting ? <><Loader2 className="animate-spin" size={24} /> Submitting...</> : <><Send size={22} /> Submit Report</>}
-                                </button>
+                                </motion.button>
                             </div>
                         )}
                     </motion.div>
@@ -715,6 +874,221 @@ export default function ReportPage() {
                     </div>
                 )}
             </div>
+
+            {/* Animated Submission & Success Celebration Overlay */}
+            <AnimatePresence>
+                {submitPhase !== 'idle' && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                        className="fixed inset-0 z-[120] bg-emerald-950/35 backdrop-blur-md flex items-center justify-center p-4"
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.92, y: -12 }}
+                            transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+                            className="relative bg-white/95 backdrop-blur-2xl rounded-3xl border border-emerald-100 shadow-2xl p-8 max-w-md w-full text-center overflow-hidden"
+                        >
+                            {/* Subtle ambient glow */}
+                            <div className="absolute -top-20 -right-20 w-48 h-48 rounded-full bg-emerald-200/40 blur-3xl pointer-events-none" />
+                            <div className="absolute -bottom-20 -left-20 w-48 h-48 rounded-full bg-teal-200/40 blur-3xl pointer-events-none" />
+
+                            <AnimatePresence mode="wait">
+                                {submitPhase === 'submitting' ? (
+                                    <motion.div
+                                        key="submitting"
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, scale: 0.92 }}
+                                        transition={{ duration: 0.25 }}
+                                        className="relative z-10"
+                                    >
+                                        {/* Animated Orbital Rings */}
+                                        <div className="relative w-24 h-24 mx-auto mb-6 flex items-center justify-center">
+                                            <motion.div
+                                                className="absolute inset-0 rounded-full border-4 border-emerald-100 border-t-emerald-500"
+                                                animate={{ rotate: 360 }}
+                                                transition={{ duration: 1.1, repeat: Infinity, ease: 'linear' }}
+                                            />
+                                            <motion.div
+                                                className="absolute inset-2 rounded-full border-4 border-teal-50 border-b-teal-400"
+                                                animate={{ rotate: -360 }}
+                                                transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }}
+                                            />
+                                            <motion.div
+                                                animate={{ scale: [1, 1.12, 1] }}
+                                                transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                                                className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30"
+                                            >
+                                                <Send size={22} />
+                                            </motion.div>
+                                        </div>
+
+                                        <h3 className="text-xl font-bold text-gray-900 mb-1">Submitting Report</h3>
+                                        <p className="text-sm text-gray-500 mb-6">Connecting to municipal dispatch...</p>
+
+                                        {/* Live Progress Stages */}
+                                        <div className="space-y-3 text-left bg-gray-50/80 rounded-2xl p-4 border border-gray-100">
+                                            {[
+                                                'Preparing & optimizing photos',
+                                                'Logging waste report & GPS pin',
+                                                'Verifying location & anti-fraud checks',
+                                            ].map((label, idx) => {
+                                                const isDone = submitStage > idx;
+                                                const isActive = submitStage === idx;
+                                                return (
+                                                    <motion.div
+                                                        key={label}
+                                                        initial={{ opacity: 0.4, x: -6 }}
+                                                        animate={{ opacity: isDone || isActive ? 1 : 0.45, x: 0 }}
+                                                        className="flex items-center gap-3 text-sm"
+                                                    >
+                                                        <div
+                                                            className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${
+                                                                isDone
+                                                                    ? 'bg-emerald-500 text-white'
+                                                                    : isActive
+                                                                    ? 'bg-emerald-100 text-emerald-600'
+                                                                    : 'bg-gray-200 text-gray-400'
+                                                            }`}
+                                                        >
+                                                            {isDone ? (
+                                                                <CheckCircle2 size={14} />
+                                                            ) : isActive ? (
+                                                                <Loader2 size={14} className="animate-spin" />
+                                                            ) : (
+                                                                <span className="text-[11px] font-bold">{idx + 1}</span>
+                                                            )}
+                                                        </div>
+                                                        <span className={isDone || isActive ? 'font-semibold text-gray-800' : 'text-gray-400'}>
+                                                            {label}
+                                                        </span>
+                                                    </motion.div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Smooth Progress Bar */}
+                                        <div className="mt-5 h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                            <motion.div
+                                                className="h-full bg-gradient-to-r from-emerald-400 to-teal-500 rounded-full"
+                                                initial={{ width: '15%' }}
+                                                animate={{ width: `${Math.min(92, 28 + submitStage * 28)}%` }}
+                                                transition={{ duration: 0.45, ease: 'easeOut' }}
+                                            />
+                                        </div>
+                                    </motion.div>
+                                ) : (
+                                    <motion.div
+                                        key="success"
+                                        initial={{ opacity: 0, scale: 0.85 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                                        className="relative z-10 py-2"
+                                    >
+                                        {/* Confetti Burst Particles */}
+                                        <div className="relative w-24 h-24 mx-auto mb-5 flex items-center justify-center">
+                                            {[
+                                                { x: -46, y: -38, color: 'bg-emerald-400', delay: 0.05 },
+                                                { x: 48, y: -34, color: 'bg-amber-400', delay: 0.08 },
+                                                { x: -54, y: 12, color: 'bg-teal-400', delay: 0.1 },
+                                                { x: 52, y: 18, color: 'bg-emerald-500', delay: 0.12 },
+                                                { x: -24, y: -54, color: 'bg-cyan-400', delay: 0.07 },
+                                                { x: 26, y: -52, color: 'bg-lime-400', delay: 0.11 },
+                                                { x: -34, y: 42, color: 'bg-amber-300', delay: 0.09 },
+                                                { x: 36, y: 42, color: 'bg-teal-300', delay: 0.13 },
+                                            ].map((dot, idx) => (
+                                                <motion.span
+                                                    key={idx}
+                                                    initial={{ opacity: 1, x: 0, y: 0, scale: 0 }}
+                                                    animate={{ opacity: 0, x: dot.x, y: dot.y, scale: [0, 1.3, 0.6] }}
+                                                    transition={{ duration: 0.9, delay: dot.delay, ease: [0.165, 0.84, 0.44, 1] }}
+                                                    className={`absolute w-2.5 h-2.5 rounded-full ${dot.color}`}
+                                                />
+                                            ))}
+
+                                            {/* Expanding Halo */}
+                                            <motion.div
+                                                initial={{ scale: 0.6, opacity: 0.8 }}
+                                                animate={{ scale: 1.5, opacity: 0 }}
+                                                transition={{ duration: 0.9, ease: 'easeOut' }}
+                                                className="absolute inset-0 rounded-full bg-emerald-400/30"
+                                            />
+
+                                            {/* Animated Self-Drawing Checkmark Circle */}
+                                            <motion.div
+                                                initial={{ scale: 0 }}
+                                                animate={{ scale: 1 }}
+                                                transition={{ type: 'spring', stiffness: 360, damping: 18 }}
+                                                className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-xl shadow-emerald-500/35"
+                                            >
+                                                <svg className="w-10 h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                    <motion.path
+                                                        d="M5 13l4 4L19 7"
+                                                        initial={{ pathLength: 0 }}
+                                                        animate={{ pathLength: 1 }}
+                                                        transition={{ duration: 0.45, delay: 0.15, ease: 'easeOut' }}
+                                                    />
+                                                </svg>
+                                            </motion.div>
+                                        </div>
+
+                                        <motion.h3
+                                            initial={{ opacity: 0, y: 8 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: 0.2 }}
+                                            className="text-2xl font-extrabold text-gray-900 mb-1"
+                                        >
+                                            Report Submitted!
+                                        </motion.h3>
+
+                                        <motion.p
+                                            initial={{ opacity: 0, y: 6 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: 0.28 }}
+                                            className="text-sm text-gray-500 mb-4"
+                                        >
+                                            Thank you for keeping Mumbai clean.
+                                        </motion.p>
+
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.85 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            transition={{ type: 'spring', stiffness: 320, delay: 0.32 }}
+                                            className="flex items-center justify-center gap-2 flex-wrap mb-6"
+                                        >
+                                            {submittedReportId && (
+                                                <span className="px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 font-mono text-xs font-bold border border-gray-200">
+                                                    {submittedReportId}
+                                                </span>
+                                            )}
+                                            {!isAnonymous && (
+                                                <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200">
+                                                    <Clock size={13} />
+                                                    Pending (+20 pts on resolution)
+                                                </span>
+                                            )}
+                                        </motion.div>
+
+                                        <p className="text-xs text-gray-400 mb-2">Opening your Profile &amp; My Reports...</p>
+                                        <div className="h-1.5 w-full bg-emerald-100 rounded-full overflow-hidden">
+                                            <motion.div
+                                                className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full"
+                                                initial={{ width: '0%' }}
+                                                animate={{ width: '100%' }}
+                                                transition={{ duration: 1.45, ease: 'easeInOut' }}
+                                            />
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

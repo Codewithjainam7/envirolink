@@ -4,8 +4,9 @@ import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Camera, Upload, MapPin, Mic, X, Check, ChevronRight, ChevronLeft,
-    Trash2, PackageOpen, Wind, HardHat, Cpu, Leaf, LucideIcon
+    Trash2, PackageOpen, Wind, HardHat, Cpu, Leaf, Loader2, LucideIcon
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAppStore } from '@/store';
 import { WasteCategory, WASTE_CATEGORIES } from '@/types';
 import Button from '@/components/ui/Button';
@@ -52,6 +53,7 @@ export default function ReportForm() {
 
     const [step, setStep] = useState(1);
     const [direction, setDirection] = useState(0);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const goToStep = (newStep: number) => {
@@ -59,12 +61,54 @@ export default function ReportForm() {
         setStep(newStep);
     };
 
-    const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (files && files.length > 0) {
-            const imageUrls = Array.from(files).map(file => URL.createObjectURL(file));
-            updateNewReport({ images: [...newReport.images, ...imageUrls] });
+    const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (!files.length) return;
+
+        setIsAnalyzing(true);
+        const validImages: string[] = [...newReport.images];
+        let detectedCategory: WasteCategory | null = newReport.category;
+
+        for (const file of files) {
+            if (validImages.length >= 5) break;
+
+            const base64 = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+
+            try {
+                const response = await fetch('/api/analyze-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ imageBase64: base64 }),
+                });
+                const result = await response.json();
+
+                if (!result.isWasteRelated) {
+                    toast.error(result.rejectionReason || 'Image rejected - not related to waste');
+                } else {
+                    validImages.push(base64);
+                    if (!detectedCategory && result.topCategories?.[0] && result.topCategories[0] in WASTE_CATEGORIES) {
+                        detectedCategory = result.topCategories[0] as WasteCategory;
+                    }
+                }
+            } catch {
+                toast.error('Failed to analyze image');
+            }
         }
+
+        if (validImages.length > newReport.images.length) {
+            toast.success(`${validImages.length - newReport.images.length} valid waste photo(s) added`);
+            updateNewReport({
+                images: validImages,
+                ...(detectedCategory ? { category: detectedCategory } : {}),
+            });
+        }
+        setIsAnalyzing(false);
     };
 
     const handleCategorySelect = (category: WasteCategory) => {
@@ -81,7 +125,7 @@ export default function ReportForm() {
         setTimeout(() => setStep(1), 300);
     };
 
-    const canProceedToStep2 = newReport.images.length > 0;
+    const canProceedToStep2 = newReport.images.length > 0 && !isAnalyzing;
     const canProceedToStep3 = newReport.category !== null;
 
     return (
@@ -185,6 +229,13 @@ export default function ReportForm() {
                                 onChange={handleImageSelect}
                                 className="hidden"
                             />
+
+                            {isAnalyzing && (
+                                <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-3 rounded-xl text-sm font-medium">
+                                    <Loader2 className="animate-spin" size={18} />
+                                    <span>AI is verifying waste in your photo...</span>
+                                </div>
+                            )}
 
                             {/* Location Preview */}
                             <motion.div

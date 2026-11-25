@@ -21,6 +21,7 @@ const statusFilters: { key: ReportStatus | 'all'; label: string }[] = [
     { key: 'assigned', label: 'Assigned' },
     { key: 'in_progress', label: 'In Progress' },
     { key: 'resolved', label: 'Resolved' },
+    { key: 'rejected', label: 'Rejected' },
 ];
 
 const categoryOptions = [
@@ -318,62 +319,86 @@ export default function ReportsPage() {
         slaBreachOnly: false,
     });
 
+    const fetchReports = async () => {
+        try {
+            const supabase = createClient();
+            const { data: reportsData, error: reportsError } = await supabase
+                .from('reports')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (reportsError) throw reportsError;
+
+            const { data: imagesData } = await supabase
+                .from('report_images')
+                .select('*');
+
+            const mappedReports: Report[] = (reportsData || []).map((r: any) => ({
+                id: r.id,
+                reportId: r.report_id,
+                location: {
+                    latitude: r.latitude,
+                    longitude: r.longitude,
+                    address: r.address || `${r.latitude?.toFixed(4)}, ${r.longitude?.toFixed(4)}`,
+                    locality: r.locality || r.address?.split(',')[0] || 'Unknown',
+                    city: r.city || 'Mumbai'
+                },
+                category: r.category,
+                severity: r.severity,
+                status: r.status,
+                description: r.description,
+                reporterName: r.is_anonymous ? 'Anonymous' : 'Citizen',
+                isAnonymous: r.is_anonymous,
+                assignedTo: (r.assigned_worker_id || r.assigned_department_id) ? {
+                    departmentId: r.assigned_department_id,
+                    departmentName: r.assigned_department_name || 'Waste Management',
+                    workerId: r.assigned_worker_id,
+                    workerName: r.assigned_worker_name || 'Assigned Worker'
+                } : undefined,
+                slaHours: r.sla_hours || 24,
+                slaDueAt: r.sla_due_at || new Date(new Date(r.created_at).getTime() + 24 * 60 * 60 * 1000).toISOString(),
+                isSlaBreach: r.is_sla_breach || false,
+                requiresReview: Boolean(r.requires_review),
+                rejectionReason: r.rejection_reason || undefined,
+                createdAt: r.created_at,
+                updatedAt: r.updated_at,
+                images: imagesData?.filter((img: any) => img.report_id === r.id).map((img: any) => ({
+                    id: img.id,
+                    url: img.url
+                })) || []
+            }));
+
+            setReports(mappedReports);
+        } catch (error) {
+            console.error('Failed to fetch reports:', error);
+        }
+    };
+
     useEffect(() => {
-        const fetchReports = async () => {
-            try {
-                const supabase = createClient();
-                const { data: reportsData, error: reportsError } = await supabase
-                    .from('reports')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-
-                if (reportsError) throw reportsError;
-
-                const { data: imagesData } = await supabase
-                    .from('report_images')
-                    .select('*');
-
-                const mappedReports: Report[] = (reportsData || []).map((r: any) => ({
-                    id: r.id,
-                    reportId: r.report_id,
-                    location: {
-                        latitude: r.latitude,
-                        longitude: r.longitude,
-                        address: r.address || `${r.latitude?.toFixed(4)}, ${r.longitude?.toFixed(4)}`,
-                        locality: r.locality || r.address?.split(',')[0] || 'Unknown',
-                        city: r.city || 'Mumbai'
-                    },
-                    category: r.category,
-                    severity: r.severity,
-                    status: r.status,
-                    description: r.description,
-                    reporterName: r.is_anonymous ? 'Anonymous' : 'Citizen',
-                    isAnonymous: r.is_anonymous,
-                    assignedTo: (r.assigned_worker_id || r.assigned_department_id) ? {
-                        departmentId: r.assigned_department_id,
-                        departmentName: r.assigned_department_name || 'Waste Management',
-                        workerId: r.assigned_worker_id,
-                        workerName: r.assigned_worker_name || 'Assigned Worker'
-                    } : undefined,
-                    slaHours: r.sla_hours || 24,
-                    slaDueAt: r.sla_due_at || new Date(new Date(r.created_at).getTime() + 24 * 60 * 60 * 1000).toISOString(),
-                    isSlaBreach: r.is_sla_breach || false,
-                    createdAt: r.created_at,
-                    updatedAt: r.updated_at,
-                    images: imagesData?.filter((img: any) => img.report_id === r.id).map((img: any) => ({
-                        id: img.id,
-                        url: img.url
-                    })) || []
-                }));
-
-                setReports(mappedReports);
-            } catch (error) {
-                console.error('Failed to fetch reports:', error);
-            }
-        };
-
         setMounted(true);
         fetchReports();
+
+        const interval = setInterval(fetchReports, 15000);
+        const onFocus = () => fetchReports();
+        window.addEventListener('focus', onFocus);
+
+        const supabase = createClient();
+        const channel = supabase
+            .channel('authority-reports-page-realtime')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'reports' },
+                () => {
+                    fetchReports();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('focus', onFocus);
+            supabase.removeChannel(channel);
+        };
     }, []);
 
     if (!mounted) return null;
@@ -540,6 +565,52 @@ export default function ReportsPage() {
         } catch (err) {
             console.error('Error resolving reports:', err);
             alert('Failed to resolve reports. Please try again.');
+        } finally {
+            setBulkActionLoading(false);
+        }
+    };
+
+    // Delete one or multiple reports from Supabase
+    const handleDeleteReports = async (reportIds: string[]) => {
+        if (reportIds.length === 0) return;
+        const msg = reportIds.length === 1
+            ? 'Are you sure you want to permanently delete this report?'
+            : `Are you sure you want to permanently delete ${reportIds.length} report(s)?`;
+        if (!confirm(msg)) return;
+
+        setBulkActionLoading(true);
+        try {
+            const supabase = createClient();
+
+            // Clean up child images first
+            await supabase
+                .from('report_images')
+                .delete()
+                .in('report_id', reportIds);
+
+            const { data: deletedRows, error } = await supabase
+                .from('reports')
+                .delete()
+                .in('id', reportIds)
+                .select('id');
+
+            if (error) throw error;
+
+            if (!deletedRows || deletedRows.length === 0) {
+                alert('Delete blocked by Supabase RLS policy. Run the DELETE RLS SQL policy in Supabase SQL Editor first.');
+                return;
+            }
+
+            const deletedIds = new Set(deletedRows.map((r: any) => r.id));
+            setReports(prev => prev.filter(r => !deletedIds.has(r.id)));
+            setSelectedReports(prev => prev.filter(id => !deletedIds.has(id)));
+            if (selectedReport && deletedIds.has(selectedReport.id)) {
+                setSelectedReport(null);
+            }
+            alert(`Deleted ${deletedRows.length} report(s)`);
+        } catch (err: any) {
+            console.error('Error deleting reports:', err);
+            alert(err?.message || 'Failed to delete reports. Please try again.');
         } finally {
             setBulkActionLoading(false);
         }
@@ -955,6 +1026,14 @@ export default function ReportsPage() {
                                     Resolve
                                 </button>
                                 <button
+                                    onClick={() => handleDeleteReports(selectedReports)}
+                                    disabled={bulkActionLoading}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-red-600 hover:bg-red-100 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
+                                >
+                                    <Trash2 size={16} />
+                                    Delete
+                                </button>
+                                <button
                                     onClick={() => setSelectedReports([])}
                                     className="flex items-center gap-1.5 px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm font-medium ml-1"
                                 >
@@ -1095,13 +1174,23 @@ export default function ReportsPage() {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-4 text-center">
-                                                    <button
-                                                        onClick={() => setSelectedReport(report)}
-                                                        className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center gap-1.5 mx-auto"
-                                                    >
-                                                        <Eye size={14} />
-                                                        Details
-                                                    </button>
+                                                    <div className="flex items-center justify-center gap-1.5">
+                                                        <button
+                                                            onClick={() => setSelectedReport(report)}
+                                                            className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center gap-1.5"
+                                                        >
+                                                            <Eye size={14} />
+                                                            Details
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteReports([report.id])}
+                                                            disabled={bulkActionLoading}
+                                                            title="Delete Report"
+                                                            className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </motion.tr>
                                         );

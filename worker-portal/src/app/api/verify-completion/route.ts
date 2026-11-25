@@ -37,46 +37,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const isNothingFoundMode = mode === 'nothing_found';
-        const prompt = isNothingFoundMode
-            ? `You are an AI anti-fraud inspector verifying a municipal field worker's "Nothing Found / Empty Spot" claim.
-
-TASK: Examine the worker's live spot photo${originalImage ? ' alongside the original citizen report photo' : ''} to verify whether the site currently has NO visible waste/issue.
-
-REPORTED ISSUE:
-- Category: ${category || 'Unknown'}
-- Description: ${description || 'No description'}
-
-VERIFICATION CRITERIA:
-1. The worker's photo must show a real outdoor street, bin, sidewalk, or public area — NOT a blank wall, indoor room, screen, or blurry/covered lens.
-2. The reported waste/garbage/hazard must NOT be present at the spot (the area appears clean/empty).
-
-RESPOND IN JSON FORMAT ONLY (no markdown):
-{
-  "isResolved": true/false,
-  "confidence": "High/Medium/Low",
-  "reason": "Brief explanation"
-}`
-            : `You are an AI assistant helping verify if a waste/environmental issue has been resolved.
-
-TASK: Compare the proof image showing completed work${originalImage ? ' against the original issue image' : ''} and determine if the issue has been properly resolved.
-
-ISSUE DETAILS:
-- Category: ${category || 'Unknown'}
-- Description: ${description || 'No description'}
-
-VERIFICATION CRITERIA:
-1. The area should be clean and free of waste/debris
-2. The issue mentioned should no longer be visible
-3. The work appears to be completed properly
-
-RESPOND IN JSON FORMAT ONLY (no markdown):
-{
-  "isResolved": true/false,
-  "confidence": "High/Medium/Low",
-  "reason": "Brief explanation"
-}`;
-
         const proofDataUrl = await toBase64DataUrl(proofImage);
         if (!proofDataUrl) {
             return NextResponse.json(
@@ -85,20 +45,64 @@ RESPOND IN JSON FORMAT ONLY (no markdown):
             );
         }
 
-        const content: any[] = [
-            { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: proofDataUrl } },
-        ];
+        const origDataUrl = originalImage ? await toBase64DataUrl(originalImage) : null;
+        const afterLabel = origDataUrl ? 'IMAGE 2 (AFTER)' : 'IMAGE 1';
 
-        if (originalImage) {
-            const origDataUrl = await toBase64DataUrl(originalImage);
-            if (origDataUrl) {
-                content.push({
-                    type: 'image_url',
-                    image_url: { url: origDataUrl },
-                });
-            }
+        const isNothingFoundMode = mode === 'nothing_found';
+        const prompt = isNothingFoundMode
+            ? `You are an AI anti-fraud inspector verifying a municipal field worker's "Nothing Found / Empty Spot" claim.
+
+IMPORTANT RULE: Evaluate ONLY ${afterLabel} (the worker's current spot photo).${origDataUrl ? ' IMAGE 1 is ONLY the older citizen report photo BEFORE arrival — do NOT reject because IMAGE 1 has waste.' : ''}
+
+REPORTED ISSUE:
+- Category: ${category || 'Unknown'}
+- Description: ${description || 'No description'}
+
+VERIFICATION CRITERIA FOR ${afterLabel}:
+1. ${afterLabel} must show a real outdoor street, bin, sidewalk, or public area — NOT a blank wall, indoor room, screen, or graphic logo.
+2. ${afterLabel} must show NO visible garbage/overflow/hazard at the spot (clean/empty).
+
+RESPOND IN JSON FORMAT ONLY (no markdown):
+{
+  "isResolved": true/false,
+  "confidence": "High/Medium/Low",
+  "reason": "Brief explanation focused only on ${afterLabel}"
+}`
+            : `You are verifying a municipal sanitation worker's cleanup proof photo.
+
+IMPORTANT RULE: Evaluate ONLY ${afterLabel} (the AFTER completion photo).${origDataUrl ? ' IMAGE 1 is ONLY the older BEFORE photo showing what waste used to be there — NEVER mark isResolved false just because IMAGE 1 contains waste.' : ''}
+
+ISSUE DETAILS:
+- Category: ${category || 'Unknown'}
+- Description: ${description || 'No description'}
+
+VERIFICATION CRITERIA FOR ${afterLabel}:
+1. Set "isResolved": true if ${afterLabel} shows the area/bin is now clean, emptied, closed/covered, swept, or free of overflowing garbage (even if taken from a slightly different angle).
+2. Set "isResolved": false ONLY if ${afterLabel} ITSELF still shows overflowing trash, garbage piles, or is an unrelated graphic/logo/indoor/blank photo.
+
+RESPOND IN JSON FORMAT ONLY (no markdown):
+{
+  "isResolved": true/false,
+  "confidence": "High/Medium/Low",
+  "reason": "Brief explanation focused only on ${afterLabel}"
+}`;
+
+        const content: any[] = [];
+        if (origDataUrl) {
+            content.push({
+                type: 'text',
+                text: 'IMAGE 1 (BEFORE — old citizen complaint photo BEFORE cleanup; for context only):',
+            });
+            content.push({ type: 'image_url', image_url: { url: origDataUrl } });
         }
+        content.push({
+            type: 'text',
+            text: origDataUrl
+                ? 'IMAGE 2 (AFTER — worker current proof photo; JUDGE ONLY THIS IMAGE):'
+                : 'IMAGE 1 (Current proof photo; JUDGE THIS IMAGE):',
+        });
+        content.push({ type: 'image_url', image_url: { url: proofDataUrl } });
+        content.push({ type: 'text', text: prompt });
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',

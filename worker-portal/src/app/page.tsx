@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -13,6 +13,7 @@ import {
 import FloatingBlobs from '@/components/FloatingBlobs';
 import BottomNav from '@/components/BottomNav';
 import ActionSlider from '@/components/ActionSlider';
+import GeoTagCameraModal from '@/components/GeoTagCameraModal';
 import { stampWorkerGeoTag } from '@/lib/geotag';
 
 const NOTHING_FOUND_FLAGS = [
@@ -70,6 +71,8 @@ export default function WorkerDashboard() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [nothingFoundFlag, setNothingFoundFlag] = useState('no_waste');
   const [nothingFoundReason, setNothingFoundReason] = useState('No waste found at spot');
+  const [showWorkerCamera, setShowWorkerCamera] = useState(false);
+  const proofInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -865,10 +868,10 @@ export default function WorkerDashboard() {
                     : 'Upload a photo of the cleaned spot. GeoTag coordinates + AI will verify cleanup.'}
                 </p>
 
-                <div className="border-2 border-dashed border-gray-200 rounded-2xl p-5 text-center">
+                <div className="border-2 border-dashed border-gray-200 rounded-2xl p-4 text-center">
                   {proofImage ? (
                     <div className="relative">
-                      <img src={proofImage} alt="GeoTagged Proof" className="max-h-52 mx-auto rounded-xl" />
+                      <img src={proofImage} alt="GeoTagged Proof" className="max-h-56 mx-auto rounded-xl" />
                       <button
                         onClick={() => { setProofImage(null); setRawProofImage(null); }}
                         className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full"
@@ -878,17 +881,36 @@ export default function WorkerDashboard() {
                       </button>
                     </div>
                   ) : (
-                    <label className="cursor-pointer block">
-                      <Upload size={36} className="mx-auto text-gray-400 mb-2" />
-                      <p className="text-gray-600 font-medium text-sm">Click to upload GeoTagged photo</p>
+                    <div className="space-y-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowWorkerCamera(true)}
+                        className={`w-full py-3 px-4 rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md transition ${
+                          proofMode === 'nothing_found'
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500'
+                            : 'bg-gradient-to-r from-emerald-600 to-emerald-500'
+                        }`}
+                      >
+                        <Camera size={18} />
+                        Open GeoTag Camera
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => proofInputRef.current?.click()}
+                        className="w-full py-2.5 px-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                      >
+                        <Upload size={15} />
+                        Or Upload Photo / Gallery
+                      </button>
                       <input
+                        ref={proofInputRef}
                         type="file"
                         accept="image/*"
                         capture="environment"
                         onChange={handleProofUpload}
                         className="hidden"
                       />
-                    </label>
+                    </div>
                   )}
                 </div>
               </div>
@@ -933,6 +955,21 @@ export default function WorkerDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {showProofModal && (
+        <GeoTagCameraModal
+          isOpen={showWorkerCamera}
+          onClose={() => setShowWorkerCamera(false)}
+          mode={proofMode}
+          address={showProofModal.address || showProofModal.locality || 'Verification Site'}
+          workerCoords={workerCoords}
+          onCapture={({ rawDataUrl, stampedDataUrl }) => {
+            setRawProofImage(rawDataUrl);
+            setProofImage(stampedDataUrl);
+          }}
+          onFallbackGallery={() => proofInputRef.current?.click()}
+        />
+      )}
     </div>
   );
 }

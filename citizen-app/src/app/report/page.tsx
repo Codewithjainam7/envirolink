@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import { useAppStore } from '@/store';
 import { getSupabase } from '@/lib/supabase';
 import { extractExifGps, stampGeoTagOnImage } from '@/lib/geotag';
+import GeoTagCameraModal from '@/components/GeoTagCameraModal';
 import { Report, WasteCategory, Severity } from '@/types';
 
 const CATEGORIES = [
@@ -54,6 +55,8 @@ export default function ReportPage() {
     const [location, setLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
     const [geoSource, setGeoSource] = useState<'gps' | 'exif'>('gps');
     const [isGettingLocation, setIsGettingLocation] = useState(false);
+    const [showGeoCamera, setShowGeoCamera] = useState(false);
+    const hasFetchedGpsRef = useRef(false);
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');
@@ -94,10 +97,17 @@ export default function ReportPage() {
         }
     }, []);
 
-    useEffect(() => { getCurrentLocation(); }, []);
+    useEffect(() => {
+        if (hasFetchedGpsRef.current) return;
+        hasFetchedGpsRef.current = true;
+        getCurrentLocation(true);
+    }, []);
 
-    const getCurrentLocation = async () => {
-        if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
+    const getCurrentLocation = async (silent = false) => {
+        if (!navigator.geolocation) {
+            if (!silent) toast.error('Geolocation not supported', { id: 'geotag-location-toast' });
+            return;
+        }
         setIsGettingLocation(true);
         navigator.geolocation.getCurrentPosition(
             async (pos) => {
@@ -110,9 +120,16 @@ export default function ReportPage() {
                 } catch { setLocation({ lat: latitude, lng: longitude, address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` }); }
                 setGeoSource('gps');
                 setIsGettingLocation(false);
-                toast.success('GeoTag location detected!');
+                if (!silent) {
+                    toast.success('GeoTag location updated!', { id: 'geotag-location-toast' });
+                }
             },
-            () => { setIsGettingLocation(false); toast.error('Enable GPS'); },
+            () => {
+                setIsGettingLocation(false);
+                if (!silent) {
+                    toast.error('Please enable GPS to attach GeoTag', { id: 'geotag-location-toast' });
+                }
+            },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
     };
@@ -210,32 +227,55 @@ export default function ReportPage() {
             const { valid, result, imageHash } = await analyzeImage(file, { batchHashes: validHashes });
 
             if (valid && result) {
-                validImages.push(file);
-                validPreviews.push(URL.createObjectURL(file));
-                if (imageHash) validHashes.push(imageHash);
-                addedCount++;
+                let effectiveLoc = location;
+                let effectiveSource = geoSource;
 
-                // Check native EXIF GPS metadata inside photo first
-                extractExifGps(file).then(async (exifGps) => {
-                    if (!exifGps) return;
+                // Check native EXIF GPS metadata inside photo silently (zero popup toast spam)
+                const exifGps = await extractExifGps(file).catch(() => null);
+                if (exifGps) {
+                    effectiveSource = 'exif';
+                    setGeoSource('exif');
                     try {
                         const res = await fetch(`/api/geocode?lat=${exifGps.lat}&lon=${exifGps.lng}`);
                         const geoData = await res.json();
-                        setLocation({
+                        effectiveLoc = {
                             lat: exifGps.lat,
                             lng: exifGps.lng,
                             address: geoData.display_name || `${exifGps.lat.toFixed(6)}, ${exifGps.lng.toFixed(6)}`,
-                        });
+                        };
                     } catch {
-                        setLocation({
+                        effectiveLoc = {
                             lat: exifGps.lat,
                             lng: exifGps.lng,
                             address: `${exifGps.lat.toFixed(6)}, ${exifGps.lng.toFixed(6)}`,
-                        });
+                        };
                     }
-                    setGeoSource('exif');
-                    toast.success('Photo EXIF GeoTag captured!', { id: 'exif-geotag' });
-                }).catch(() => {});
+                    setLocation(effectiveLoc);
+                }
+
+                // Immediately stamp GeoTag onto preview so the tag is visible inside the photo itself
+                const stampedPreview = await stampGeoTagOnImage(file, {
+                    maxDim: 1280,
+                    quality: 0.84,
+                    geo: effectiveLoc
+                        ? {
+                              lat: effectiveLoc.lat,
+                              lng: effectiveLoc.lng,
+                              address: effectiveLoc.address,
+                              label: effectiveSource === 'exif' ? 'PHOTO EXIF GEOTAG' : 'CITIZEN REPORT GEOTAG',
+                          }
+                        : {
+                              lat: null,
+                              lng: null,
+                              address: 'Detecting GPS location...',
+                              label: 'CITIZEN REPORT GEOTAG',
+                          },
+                });
+
+                validImages.push(file);
+                validPreviews.push(stampedPreview);
+                if (imageHash) validHashes.push(imageHash);
+                addedCount++;
 
                 // Update AI analysis with best result (highest confidence)
                 if (!bestAnalysis || (result.confidence > bestAnalysis.confidence)) {
@@ -260,9 +300,43 @@ export default function ReportPage() {
         }
 
         if (addedCount > 0) {
-            toast.success(`${addedCount} valid waste image(s) added!`);
+            toast.success(`${addedCount} valid GeoTagged photo(s) added!`, { id: 'photo-added' });
         }
 
+        setIsAnalyzing(false);
+    };
+
+    const handleGeoCameraCapture = async ({
+        rawFile,
+        stampedPreviewUrl,
+    }: {
+        rawFile: File;
+        stampedPreviewUrl: string;
+    }) => {
+        if (images.length >= 5) {
+            toast.error('Maximum 5 photos allowed per report.', { id: 'photo-limit' });
+            return;
+        }
+        setIsAnalyzing(true);
+        const { valid, result, imageHash } = await analyzeImage(rawFile, { batchHashes: imageHashes });
+        if (valid && result) {
+            setImages((prev) => [...prev, rawFile]);
+            setImagePreviews((prev) => [...prev, stampedPreviewUrl]);
+            if (imageHash) setImageHashes((prev) => [...prev, imageHash]);
+
+            const nextAnalysis = {
+                topCategories: result.topCategories || [],
+                confidence: result.confidence || 80,
+                description: result.description || '',
+            };
+            if (!aiAnalysis || nextAnalysis.confidence > aiAnalysis.confidence) {
+                setAiAnalysis(nextAnalysis);
+                if (!category && nextAnalysis.topCategories[0]) {
+                    setCategory(nextAnalysis.topCategories[0]);
+                }
+            }
+            toast.success('GeoTagged camera photo captured!', { id: 'photo-added' });
+        }
         setIsAnalyzing(false);
     };
 
@@ -556,34 +630,47 @@ export default function ReportPage() {
                         {/* Step 0: Photos */}
                         {currentStep === 0 && (
                             <div className="bg-white rounded-2xl sm:rounded-3xl border border-gray-200 p-4 sm:p-6 shadow-sm">
-                                <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-1 sm:mb-2">Upload Photos</h2>
-                                <p className="text-gray-500 text-sm mb-6">Add clear photos of the waste issue (max 5)</p>
+                                <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-1 sm:mb-2">Capture GeoTagged Photos</h2>
+                                <p className="text-gray-500 text-sm mb-5">Open live GeoTag Camera or upload photos (GPS stamp is burned directly onto each photo)</p>
 
-                                <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-emerald-300 rounded-2xl p-8 text-center cursor-pointer hover:border-emerald-500 hover:bg-emerald-50/50 transition-all mb-4">
-                                    {imagePreviews.length === 0 ? (
-                                        <div className="flex flex-col items-center">
-                                            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 flex items-center justify-center mb-4">
-                                                <Camera className="w-10 h-10 text-emerald-600" />
-                                            </div>
-                                            <p className="text-gray-700 font-semibold">Click or drag to upload</p>
-                                            <p className="text-gray-400 text-sm mt-1">JPG, PNG up to 10MB each</p>
-                                        </div>
-                                    ) : (
-                                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-                                            {imagePreviews.map((p, i) => (
-                                                <div key={i} className="relative aspect-square">
-                                                    <img src={p} alt="" className="w-full h-full rounded-xl object-cover" />
-                                                    <button onClick={(e) => { e.stopPropagation(); removeImage(i); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg hover:bg-red-600"><X size={14} /></button>
-                                                </div>
-                                            ))}
-                                            {imagePreviews.length < 5 && (
-                                                <div className="aspect-square rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50">
-                                                    <Upload className="w-6 h-6 text-gray-400" />
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+                                {/* Two primary capture options: Live GeoTag Camera + Gallery Upload */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowGeoCamera(true)}
+                                        disabled={isAnalyzing || images.length >= 5}
+                                        className="py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/25 hover:from-emerald-700 hover:to-emerald-600 transition flex items-center justify-center gap-2.5 disabled:opacity-50"
+                                    >
+                                        <Camera size={20} />
+                                        Open GeoTag Camera
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={isAnalyzing || images.length >= 5}
+                                        className="py-4 px-4 rounded-2xl border-2 border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/70 text-emerald-800 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-50"
+                                    >
+                                        <Upload size={19} />
+                                        Upload Photo / Gallery
+                                    </button>
                                 </div>
+
+                                {imagePreviews.length > 0 && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                                        {imagePreviews.map((p, i) => (
+                                            <div key={i} className="relative rounded-2xl overflow-hidden border border-emerald-200 bg-gray-900">
+                                                <img src={p} alt={`GeoTagged capture ${i + 1}`} className="w-full max-h-64 object-contain" />
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); removeImage(i); }}
+                                                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg hover:bg-red-600"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                                 <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" suppressHydrationWarning />
 
                                 {isAnalyzing && (
@@ -618,7 +705,7 @@ export default function ReportPage() {
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={getCurrentLocation}
+                                        onClick={() => getCurrentLocation(false)}
                                         className="font-bold underline shrink-0 hover:opacity-80"
                                     >
                                         {location ? 'Refresh' : 'Detect'}
@@ -800,10 +887,10 @@ export default function ReportPage() {
                                                 <p className="text-xs text-gray-400 mt-2">{location.lat.toFixed(6)}, {location.lng.toFixed(6)}</p>
                                             </div>
                                         </div>
-                                        <button onClick={getCurrentLocation} className="mt-4 w-full py-2 text-emerald-600 font-medium hover:bg-emerald-100 rounded-xl transition">Refresh Location</button>
+                                        <button onClick={() => getCurrentLocation(false)} className="mt-4 w-full py-2 text-emerald-600 font-medium hover:bg-emerald-100 rounded-xl transition">Refresh Location</button>
                                     </div>
                                 ) : (
-                                    <button onClick={getCurrentLocation} className="w-full py-6 border-2 border-dashed border-emerald-300 rounded-2xl text-emerald-600 flex flex-col items-center gap-2 hover:bg-emerald-50 transition">
+                                    <button onClick={() => getCurrentLocation(false)} className="w-full py-6 border-2 border-dashed border-emerald-300 rounded-2xl text-emerald-600 flex flex-col items-center gap-2 hover:bg-emerald-50 transition">
                                         <Navigation size={32} />
                                         <span className="font-semibold">Enable Location</span>
                                         <span className="text-sm text-gray-500">Grant permission to detect</span>
@@ -1131,6 +1218,14 @@ export default function ReportPage() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <GeoTagCameraModal
+                isOpen={showGeoCamera}
+                onClose={() => setShowGeoCamera(false)}
+                location={location}
+                onCapture={handleGeoCameraCapture}
+                onFallbackGallery={() => fileInputRef.current?.click()}
+            />
         </div>
     );
 }

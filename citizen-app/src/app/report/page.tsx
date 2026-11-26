@@ -209,101 +209,109 @@ export default function ReportPage() {
     };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files || []);
-        e.target.value = '';
+        const inputEl = e.currentTarget;
+        const files = Array.from(inputEl.files || []);
         if (!files.length) return;
 
         setIsAnalyzing(true);
+        toast.loading('Reading & analyzing photo...', { id: 'photo-analyzing' });
         const validImages: File[] = [...images];
         const validPreviews: string[] = [...imagePreviews];
         const validHashes: string[] = [...imageHashes];
         let bestAnalysis: { topCategories: string[]; confidence: number; description: string } | null = aiAnalysis;
         let addedCount = 0;
 
-        // Analyze each new image
-        for (const file of files) {
-            if (validImages.length >= 5) break;
+        try {
+            // Analyze each new image
+            for (const file of files) {
+                if (validImages.length >= 5) break;
 
-            const { valid, result, imageHash } = await analyzeImage(file, { batchHashes: validHashes });
+                const { valid, result, imageHash } = await analyzeImage(file, { batchHashes: validHashes });
 
-            if (valid && result) {
-                let effectiveLoc = location;
-                let effectiveSource = geoSource;
+                if (valid && result) {
+                    let effectiveLoc = location;
+                    let effectiveSource = geoSource;
 
-                // Check native EXIF GPS metadata inside photo silently (zero popup toast spam)
-                const exifGps = await extractExifGps(file).catch(() => null);
-                if (exifGps) {
-                    effectiveSource = 'exif';
-                    setGeoSource('exif');
-                    try {
-                        const res = await fetch(`/api/geocode?lat=${exifGps.lat}&lon=${exifGps.lng}`);
-                        const geoData = await res.json();
-                        effectiveLoc = {
-                            lat: exifGps.lat,
-                            lng: exifGps.lng,
-                            address: geoData.display_name || `${exifGps.lat.toFixed(6)}, ${exifGps.lng.toFixed(6)}`,
-                        };
-                    } catch {
-                        effectiveLoc = {
-                            lat: exifGps.lat,
-                            lng: exifGps.lng,
-                            address: `${exifGps.lat.toFixed(6)}, ${exifGps.lng.toFixed(6)}`,
+                    // Check native EXIF GPS metadata inside photo silently (zero popup toast spam)
+                    const exifGps = await extractExifGps(file).catch(() => null);
+                    if (exifGps) {
+                        effectiveSource = 'exif';
+                        setGeoSource('exif');
+                        try {
+                            const res = await fetch(`/api/geocode?lat=${exifGps.lat}&lon=${exifGps.lng}`);
+                            const geoData = await res.json();
+                            effectiveLoc = {
+                                lat: exifGps.lat,
+                                lng: exifGps.lng,
+                                address: geoData.display_name || `${exifGps.lat.toFixed(6)}, ${exifGps.lng.toFixed(6)}`,
+                            };
+                        } catch {
+                            effectiveLoc = {
+                                lat: exifGps.lat,
+                                lng: exifGps.lng,
+                                address: `${exifGps.lat.toFixed(6)}, ${exifGps.lng.toFixed(6)}`,
+                            };
+                        }
+                        setLocation(effectiveLoc);
+                    }
+
+                    // Immediately stamp GeoTag onto preview so the tag is visible inside the photo itself
+                    const stampedPreview = await stampGeoTagOnImage(file, {
+                        maxDim: 1280,
+                        quality: 0.84,
+                        geo: effectiveLoc
+                            ? {
+                                  lat: effectiveLoc.lat,
+                                  lng: effectiveLoc.lng,
+                                  address: effectiveLoc.address,
+                                  label: effectiveSource === 'exif' ? 'PHOTO EXIF GEOTAG' : 'CITIZEN REPORT GEOTAG',
+                              }
+                            : {
+                                  lat: null,
+                                  lng: null,
+                                  address: 'Detecting GPS location...',
+                                  label: 'CITIZEN REPORT GEOTAG',
+                              },
+                    });
+
+                    validImages.push(file);
+                    validPreviews.push(stampedPreview);
+                    if (imageHash) validHashes.push(imageHash);
+                    addedCount++;
+
+                    // Update AI analysis with best result (highest confidence)
+                    if (!bestAnalysis || (result.confidence > bestAnalysis.confidence)) {
+                        bestAnalysis = {
+                            topCategories: result.topCategories || [],
+                            confidence: result.confidence || 80,
+                            description: result.description || ''
                         };
                     }
-                    setLocation(effectiveLoc);
-                }
-
-                // Immediately stamp GeoTag onto preview so the tag is visible inside the photo itself
-                const stampedPreview = await stampGeoTagOnImage(file, {
-                    maxDim: 1280,
-                    quality: 0.84,
-                    geo: effectiveLoc
-                        ? {
-                              lat: effectiveLoc.lat,
-                              lng: effectiveLoc.lng,
-                              address: effectiveLoc.address,
-                              label: effectiveSource === 'exif' ? 'PHOTO EXIF GEOTAG' : 'CITIZEN REPORT GEOTAG',
-                          }
-                        : {
-                              lat: null,
-                              lng: null,
-                              address: 'Detecting GPS location...',
-                              label: 'CITIZEN REPORT GEOTAG',
-                          },
-                });
-
-                validImages.push(file);
-                validPreviews.push(stampedPreview);
-                if (imageHash) validHashes.push(imageHash);
-                addedCount++;
-
-                // Update AI analysis with best result (highest confidence)
-                if (!bestAnalysis || (result.confidence > bestAnalysis.confidence)) {
-                    bestAnalysis = {
-                        topCategories: result.topCategories || [],
-                        confidence: result.confidence || 80,
-                        description: result.description || ''
-                    };
                 }
             }
-        }
 
-        setImages(validImages);
-        setImagePreviews(validPreviews);
-        setImageHashes(validHashes);
+            setImages(validImages);
+            setImagePreviews(validPreviews);
+            setImageHashes(validHashes);
 
-        if (bestAnalysis && bestAnalysis.topCategories.length > 0) {
-            setAiAnalysis(bestAnalysis);
-            if (!category && bestAnalysis.topCategories[0]) {
-                setCategory(bestAnalysis.topCategories[0]);
+            if (bestAnalysis && bestAnalysis.topCategories.length > 0) {
+                setAiAnalysis(bestAnalysis);
+                if (!category && bestAnalysis.topCategories[0]) {
+                    setCategory(bestAnalysis.topCategories[0]);
+                }
             }
-        }
 
-        if (addedCount > 0) {
-            toast.success(`${addedCount} valid GeoTagged photo(s) added!`, { id: 'photo-added' });
+            toast.dismiss('photo-analyzing');
+            if (addedCount > 0) {
+                toast.success(`${addedCount} valid GeoTagged photo(s) added!`, { id: 'photo-added' });
+            }
+        } catch (err: any) {
+            toast.dismiss('photo-analyzing');
+            toast.error(err?.message || 'Could not process selected photo', { id: 'photo-upload-err' });
+        } finally {
+            inputEl.value = '';
+            setIsAnalyzing(false);
         }
-
-        setIsAnalyzing(false);
     };
 
     const handleGeoCameraCapture = async ({

@@ -247,21 +247,25 @@ export default function WorkerDashboard() {
   }, [rawProofImage, workerCoords, showProofModal, proofMode]);
 
   const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
+    const inputEl = e.currentTarget;
+    const file = inputEl.files?.[0];
     if (!file) return;
-    const compressedRaw = await stampWorkerGeoTag(file, { maxDim: 1100, quality: 0.82 });
-    setRawProofImage(compressedRaw);
-    if (showProofModal) {
-      const stamped = await stampWorkerGeoTag(compressedRaw, {
-        maxDim: 1100,
-        quality: 0.84,
-        geo: buildWorkerGeoTag(showProofModal, proofMode, workerCoords),
-        isFlagged: proofMode === 'nothing_found',
-      });
-      setProofImage(stamped);
-    } else {
-      setProofImage(compressedRaw);
+    try {
+      const compressedRaw = await stampWorkerGeoTag(file, { maxDim: 1100, quality: 0.82 });
+      setRawProofImage(compressedRaw);
+      if (showProofModal) {
+        const stamped = await stampWorkerGeoTag(compressedRaw, {
+          maxDim: 1100,
+          quality: 0.84,
+          geo: buildWorkerGeoTag(showProofModal, proofMode, workerCoords),
+          isFlagged: proofMode === 'nothing_found',
+        });
+        setProofImage(stamped);
+      } else {
+        setProofImage(compressedRaw);
+      }
+    } finally {
+      inputEl.value = '';
     }
   };
 

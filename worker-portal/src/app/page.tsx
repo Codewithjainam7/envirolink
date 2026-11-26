@@ -6,13 +6,21 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import {
-  ClipboardList, MapPin, Clock, AlertTriangle,
+  ClipboardList, MapPin, Clock, AlertTriangle, Flag,
   User, Wallet, Bell, Navigation, ChevronRight, Star, Leaf, CheckCircle,
   Camera, X, Loader2, Upload
 } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
 import BottomNav from '@/components/BottomNav';
 import ActionSlider from '@/components/ActionSlider';
+import { stampWorkerGeoTag } from '@/lib/geotag';
+
+const NOTHING_FOUND_FLAGS = [
+  { id: 'no_waste', label: 'No waste found at spot' },
+  { id: 'already_cleaned', label: 'Spot already clean' },
+  { id: 'wrong_pin', label: 'Wrong / fake GPS pin' },
+  { id: 'inaccessible', label: 'Area locked / inaccessible' },
+];
 
 interface Task {
   id: string;
@@ -54,12 +62,14 @@ export default function WorkerDashboard() {
   const [showProofModal, setShowProofModal] = useState<Task | null>(null);
   const [proofMode, setProofMode] = useState<'resolved' | 'nothing_found'>('resolved');
   const [proofImage, setProofImage] = useState<string | null>(null);
+  const [rawProofImage, setRawProofImage] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<{ success: boolean; message: string } | null>(null);
   const [workerCoords, setWorkerCoords] = useState<{ lat: number; lng: number; distanceMeters: number } | null>(null);
   const [checkingLocation, setCheckingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [nothingFoundReason, setNothingFoundReason] = useState('No waste found at pinned location upon arrival');
+  const [nothingFoundFlag, setNothingFoundFlag] = useState('no_waste');
+  const [nothingFoundReason, setNothingFoundReason] = useState('No waste found at spot');
   const router = useRouter();
   const supabase = createClient();
 
@@ -204,14 +214,51 @@ export default function WorkerDashboard() {
     }
   };
 
-  const handleProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const buildWorkerGeoTag = (task: Task, mode: 'resolved' | 'nothing_found', coords: typeof workerCoords) => ({
+    lat: coords?.lat ?? null,
+    lng: coords?.lng ?? null,
+    distanceMeters: coords?.distanceMeters ?? null,
+    address: task.address || task.locality || 'Mumbai Verification Site',
+    label: mode === 'nothing_found' ? 'NOTHING FOUND FLAG GEOTAG' : 'CLEANUP VERIFIED GEOTAG',
+    timestamp: new Date().toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  });
+
+  useEffect(() => {
+    if (!rawProofImage || !showProofModal) return;
+    let active = true;
+    stampWorkerGeoTag(rawProofImage, {
+      maxDim: 1100,
+      quality: 0.84,
+      geo: buildWorkerGeoTag(showProofModal, proofMode, workerCoords),
+      isFlagged: proofMode === 'nothing_found',
+    }).then((stamped) => {
+      if (active) setProofImage(stamped);
+    });
+    return () => { active = false; };
+  }, [rawProofImage, workerCoords, showProofModal, proofMode]);
+
+  const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProofImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file) return;
+    const compressedRaw = await stampWorkerGeoTag(file, { maxDim: 1100, quality: 0.82 });
+    setRawProofImage(compressedRaw);
+    if (showProofModal) {
+      const stamped = await stampWorkerGeoTag(compressedRaw, {
+        maxDim: 1100,
+        quality: 0.84,
+        geo: buildWorkerGeoTag(showProofModal, proofMode, workerCoords),
+        isFlagged: proofMode === 'nothing_found',
+      });
+      setProofImage(stamped);
+    } else {
+      setProofImage(compressedRaw);
     }
   };
 
@@ -228,7 +275,7 @@ export default function WorkerDashboard() {
 
   const checkWorkerProximity = (task: Task) => {
     if (!navigator.geolocation) {
-      setLocationError('GPS geolocation is not supported on this device.');
+      setLocationError('GPS geolocation is unavailable on this browser — manual flag/GeoTag override will be logged.');
       return;
     }
     setCheckingLocation(true);
@@ -243,12 +290,12 @@ export default function WorkerDashboard() {
         );
         setWorkerCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude, distanceMeters: dist });
         if (dist > 100) {
-          setLocationError(`You are ${Math.round(dist)}m away. Move within 100m of the report pin to submit "Nothing Found".`);
+          setLocationError(`Currently ${Math.round(dist)}m from report pin — submission will attach an Admin Audit Distance Flag.`);
         }
         setCheckingLocation(false);
       },
       (err) => {
-        setLocationError(`Unable to verify live GPS (${err.message}). Enable location access.`);
+        setLocationError(`Live GPS unavailable (${err.message}). Submission will log manual GeoTag status.`);
         setCheckingLocation(false);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -258,43 +305,70 @@ export default function WorkerDashboard() {
   const openProofModal = (task: Task, mode: 'resolved' | 'nothing_found') => {
     setProofMode(mode);
     setProofImage(null);
+    setRawProofImage(null);
     setVerificationResult(null);
     setWorkerCoords(null);
     setLocationError(null);
-    setNothingFoundReason('No waste found at pinned location upon arrival');
+    setNothingFoundFlag('no_waste');
+    setNothingFoundReason('No waste found at spot');
     setShowProofModal(task);
-    if (mode === 'nothing_found') {
-      checkWorkerProximity(task);
+    checkWorkerProximity(task);
+  };
+
+  const uploadGeoTaggedProofToStorage = async (taskId: string, dataUrl: string, mode: 'resolved' | 'nothing_found') => {
+    try {
+      const mimeMatch = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      const mimeType = mimeMatch?.[1] || 'image/jpeg';
+      const base64Data = mimeMatch?.[2] || dataUrl.split(',')[1];
+      if (!base64Data) return;
+
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      const fileName = `${taskId}/worker-${mode}-${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('report-images')
+        .upload(fileName, bytes, { contentType: mimeType, upsert: false });
+
+      if (uploadError) {
+        console.warn('Worker proof storage upload skipped (non-fatal):', uploadError.message);
+        return;
+      }
+
+      const { data: pub } = supabase.storage.from('report-images').getPublicUrl(fileName);
+      if (pub?.publicUrl) {
+        await supabase.from('report_images').insert({
+          report_id: taskId,
+          url: pub.publicUrl,
+          storage_path: fileName,
+        });
+      }
+    } catch (err) {
+      console.warn('Worker GeoTagged proof upload skipped (non-fatal):', err);
     }
   };
 
   const verifyCompletion = async (task: Task) => {
-    if (!proofImage) {
+    const cleanProof = rawProofImage || proofImage;
+    if (!cleanProof) {
       alert('Please upload a proof image first');
       return;
-    }
-
-    if (proofMode === 'nothing_found') {
-      if (!workerCoords || workerCoords.distanceMeters > 100) {
-        setVerificationResult({
-          success: false,
-          message: locationError || 'Live GPS verification within 100m of the report pin is required.',
-        });
-        return;
-      }
     }
 
     setVerifying(true);
     setVerificationResult(null);
 
     try {
-      // Call AI to verify completion or empty-spot photo
+      // Call AI on the clean un-watermarked image to verify completion or empty-spot photo
       const response = await fetch('/api/verify-completion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           originalImage: task.images[0] || null,
-          proofImage: proofImage,
+          proofImage: cleanProof,
           category: task.category,
           description: task.description,
           mode: proofMode,
@@ -304,13 +378,28 @@ export default function WorkerDashboard() {
       const result = await response.json();
 
       if (result.isResolved) {
+        // Burn final GeoTag onto saved worker evidence photo and upload to report_images
+        const finalStampedProof = await stampWorkerGeoTag(cleanProof, {
+          maxDim: 1100,
+          quality: 0.85,
+          geo: buildWorkerGeoTag(task, proofMode, workerCoords),
+          isFlagged: proofMode === 'nothing_found',
+        });
+        await uploadGeoTaggedProofToStorage(task.id, finalStampedProof, proofMode);
+
         if (proofMode === 'nothing_found') {
-          const distMeters = Math.round(workerCoords?.distanceMeters || 0);
+          const flagLabel = NOTHING_FOUND_FLAGS.find(f => f.id === nothingFoundFlag)?.label || 'Nothing Found';
+          const gpsSummary = workerCoords
+            ? workerCoords.distanceMeters <= 100
+              ? `GeoTag Verified: ${workerCoords.lat.toFixed(6)}, ${workerCoords.lng.toFixed(6)} (${Math.round(workerCoords.distanceMeters)}m from pin)`
+              : `GeoTag Audit Flag: ${workerCoords.lat.toFixed(6)}, ${workerCoords.lng.toFixed(6)} (${Math.round(workerCoords.distanceMeters)}m from pin)`
+            : 'GeoTag: GPS unavailable (Worker manual flag)';
+
           await supabase
             .from('reports')
             .update({
               status: 'rejected',
-              rejection_reason: `${nothingFoundReason} (Worker GPS verified ${distMeters}m from pin)`,
+              rejection_reason: `[FLAG: ${flagLabel}] ${nothingFoundReason.trim() || flagLabel} · ${gpsSummary}`,
               rejected_by_worker_id: worker?.id || null,
               verification_status: 'false_report',
               verified_at: new Date().toISOString(),
@@ -320,13 +409,14 @@ export default function WorkerDashboard() {
 
           setVerificationResult({
             success: true,
-            message: 'Empty spot verified. Report closed as rejected (no waste found).',
+            message: 'Empty spot verified with GeoTag. Report flagged & closed as rejected.',
           });
 
           setTimeout(() => {
             setTasks(tasks.filter(t => t.id !== task.id));
             setShowProofModal(null);
             setProofImage(null);
+            setRawProofImage(null);
             setVerificationResult(null);
           }, 2000);
           return;
@@ -346,12 +436,13 @@ export default function WorkerDashboard() {
         // Add earnings record (optional - if earnings table exists)
         const reward = task.severity === 'critical' ? 200 : task.severity === 'high' ? 150 : 100;
 
-        setVerificationResult({ success: true, message: `Task completed! ₹${reward} added to your earnings.` });
+        setVerificationResult({ success: true, message: `Task verified with GeoTag! ₹${reward} added to your earnings.` });
 
         setTimeout(() => {
           setTasks(tasks.filter(t => t.id !== task.id));
           setShowProofModal(null);
           setProofImage(null);
+          setRawProofImage(null);
           setVerificationResult(null);
           setTasksCompleted(prev => prev + 1);
           setEarnings(prev => ({ ...prev, today: prev.today + reward }));
@@ -576,7 +667,7 @@ export default function WorkerDashboard() {
                 </p>
 
                 {task.status === 'assigned' ? (
-                  <div className="mt-4">
+                  <div className="mt-4 space-y-2.5">
                     <ActionSlider
                       label="Slide to Accept Task"
                       completedLabel="Task Accepted!"
@@ -585,12 +676,21 @@ export default function WorkerDashboard() {
                         setTimeout(() => handleAcceptTask(task.id), 800);
                       }}
                     />
-                    <button
-                      onClick={() => handleRejectTask(task.id)}
-                      className="mt-3 w-full py-2 text-xs text-gray-400 hover:text-red-500 font-bold uppercase tracking-wider transition-colors"
-                    >
-                      Decline Assignment
-                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => openProofModal(task, 'nothing_found')}
+                        className="py-2 px-3 rounded-full border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                      >
+                        <Flag size={13} />
+                        Nothing Found (Flag)
+                      </button>
+                      <button
+                        onClick={() => handleRejectTask(task.id)}
+                        className="py-2 px-3 rounded-full border border-gray-200 text-xs text-gray-500 hover:text-red-600 hover:border-red-200 font-bold transition-colors"
+                      >
+                        Decline Task
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-2.5 mt-4">
@@ -620,8 +720,8 @@ export default function WorkerDashboard() {
                       onClick={() => openProofModal(task, 'nothing_found')}
                       className="w-full py-2.5 rounded-full border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 transition"
                     >
-                      <AlertTriangle size={14} />
-                      Nothing Found at Spot (GPS + Photo Proof)
+                      <Flag size={14} />
+                      Nothing Found at Spot · Flag Report (GeoTag + Photo)
                     </button>
                   </div>
                 )}
@@ -664,10 +764,22 @@ export default function WorkerDashboard() {
               onClick={e => e.stopPropagation()}
               className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl"
             >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">
-                  {proofMode === 'nothing_found' ? 'Report Nothing Found' : 'Complete Task'}
-                </h3>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    {proofMode === 'nothing_found' ? (
+                      <>
+                        <Flag size={20} className="text-amber-600" />
+                        Flag: Nothing Found at Spot
+                      </>
+                    ) : (
+                      'Verify & Complete Task'
+                    )}
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Live GeoTag coordinates and timestamp will be embedded onto your photo.
+                  </p>
+                </div>
                 <button
                   onClick={() => !verifying && setShowProofModal(null)}
                   className="p-2 hover:bg-gray-100 rounded-full transition"
@@ -677,57 +789,88 @@ export default function WorkerDashboard() {
                 </button>
               </div>
 
-              {proofMode === 'nothing_found' && (
-                <div className="mb-4 space-y-3">
-                  <div
-                    className={`p-3 rounded-xl border text-xs font-medium flex items-center justify-between gap-2 ${
-                      checkingLocation
-                        ? 'bg-gray-50 border-gray-200 text-gray-600'
-                        : workerCoords && workerCoords.distanceMeters <= 100
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                        : 'bg-red-50 border-red-200 text-red-700'
-                    }`}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <MapPin size={14} className="shrink-0" />
-                      {checkingLocation
-                        ? 'Checking live GPS distance to pin...'
-                        : workerCoords && workerCoords.distanceMeters <= 100
-                        ? `GPS Verified (${Math.round(workerCoords.distanceMeters)}m from report pin)`
-                        : locationError || 'GPS proximity check required (within 100m).'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => showProofModal && checkWorkerProximity(showProofModal)}
-                      className="underline font-bold shrink-0"
-                    >
-                      Retry
-                    </button>
-                  </div>
+              {/* Live Verification GeoTag Card (shown for BOTH cleanup verification & nothing_found flag) */}
+              <div
+                className={`mb-4 p-3 rounded-xl border text-xs font-medium flex items-center justify-between gap-2 ${
+                  checkingLocation
+                    ? 'bg-gray-50 border-gray-200 text-gray-600'
+                    : workerCoords && workerCoords.distanceMeters <= 100
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 font-bold">
+                    <MapPin size={14} className="shrink-0" />
+                    {checkingLocation
+                      ? 'Capturing Live Verification GeoTag...'
+                      : workerCoords
+                      ? `GeoTag: ${workerCoords.lat.toFixed(5)}, ${workerCoords.lng.toFixed(5)} (${Math.round(workerCoords.distanceMeters)}m from pin)`
+                      : 'GPS GeoTag pending / unavailable'}
+                  </p>
+                  {!checkingLocation && locationError && (
+                    <p className="text-[11px] opacity-90 mt-0.5 pl-5">{locationError}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => showProofModal && checkWorkerProximity(showProofModal)}
+                  className="underline font-bold shrink-0"
+                >
+                  Refresh GPS
+                </button>
+              </div>
 
+              {proofMode === 'nothing_found' && (
+                <div className="mb-4 space-y-2.5">
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                    Select Flag Reason
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {NOTHING_FOUND_FLAGS.map((flagOpt) => {
+                      const active = nothingFoundFlag === flagOpt.id;
+                      return (
+                        <button
+                          key={flagOpt.id}
+                          type="button"
+                          onClick={() => {
+                            setNothingFoundFlag(flagOpt.id);
+                            setNothingFoundReason(flagOpt.label);
+                          }}
+                          className={`px-3 py-2 rounded-xl border text-xs font-semibold text-left transition ${
+                            active
+                              ? 'bg-amber-50 border-amber-400 text-amber-900'
+                              : 'bg-white border-gray-200 text-gray-600 hover:border-amber-200'
+                          }`}
+                        >
+                          {flagOpt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <input
                     type="text"
                     value={nothingFoundReason}
                     onChange={(e) => setNothingFoundReason(e.target.value)}
-                    placeholder="Reason (e.g., No waste found at spot)"
+                    placeholder="Add worker flag details (e.g., spot already cleaned)"
                     className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-amber-400 text-gray-800"
                   />
                 </div>
               )}
 
-              <div className="mb-6">
-                <p className="text-gray-600 mb-4">
+              <div className="mb-5">
+                <p className="text-sm text-gray-600 mb-3">
                   {proofMode === 'nothing_found'
-                    ? 'Take a clear photo of the empty/clean spot at the pin. AI + GPS will verify no waste is present.'
-                    : 'Upload a photo showing the completed work. Our AI will verify if the issue has been resolved.'}
+                    ? 'Take/upload a photo of the empty spot. GeoTag + AI proof will submit this report with a worker flag.'
+                    : 'Upload a photo of the cleaned spot. GeoTag coordinates + AI will verify cleanup.'}
                 </p>
 
-                <div className="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center">
+                <div className="border-2 border-dashed border-gray-200 rounded-2xl p-5 text-center">
                   {proofImage ? (
                     <div className="relative">
-                      <img src={proofImage} alt="Proof" className="max-h-48 mx-auto rounded-xl" />
+                      <img src={proofImage} alt="GeoTagged Proof" className="max-h-52 mx-auto rounded-xl" />
                       <button
-                        onClick={() => setProofImage(null)}
+                        onClick={() => { setProofImage(null); setRawProofImage(null); }}
                         className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full"
                         disabled={verifying}
                       >
@@ -736,11 +879,12 @@ export default function WorkerDashboard() {
                     </div>
                   ) : (
                     <label className="cursor-pointer block">
-                      <Upload size={40} className="mx-auto text-gray-400 mb-3" />
-                      <p className="text-gray-500 font-medium">Click to upload proof image</p>
+                      <Upload size={36} className="mx-auto text-gray-400 mb-2" />
+                      <p className="text-gray-600 font-medium text-sm">Click to upload GeoTagged photo</p>
                       <input
                         type="file"
                         accept="image/*"
+                        capture="environment"
                         onChange={handleProofUpload}
                         className="hidden"
                       />
@@ -758,7 +902,7 @@ export default function WorkerDashboard() {
                       : 'bg-red-50 text-red-700 border border-red-200'
                     }`}
                 >
-                  <p className="font-medium">{verificationResult.message}</p>
+                  <p className="font-medium text-sm">{verificationResult.message}</p>
                 </motion.div>
               )}
 
@@ -766,11 +910,7 @@ export default function WorkerDashboard() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => verifyCompletion(showProofModal)}
-                disabled={
-                  !proofImage ||
-                  verifying ||
-                  (proofMode === 'nothing_found' && (!workerCoords || workerCoords.distanceMeters > 100))
-                }
+                disabled={!proofImage || verifying}
                 className={`w-full py-4 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
                   proofMode === 'nothing_found'
                     ? 'bg-gradient-to-r from-amber-500 to-red-500'
@@ -780,12 +920,12 @@ export default function WorkerDashboard() {
                 {verifying ? (
                   <>
                     <Loader2 size={20} className="animate-spin" />
-                    Verifying...
+                    Verifying GeoTag &amp; Photo...
                   </>
                 ) : (
                   <>
-                    <CheckCircle size={20} />
-                    {proofMode === 'nothing_found' ? 'Verify Empty Spot & Reject' : 'Verify & Complete'}
+                    {proofMode === 'nothing_found' ? <Flag size={18} /> : <CheckCircle size={20} />}
+                    {proofMode === 'nothing_found' ? 'Submit Flag & Verify Empty Spot' : 'Verify GeoTag & Complete'}
                   </>
                 )}
               </motion.button>

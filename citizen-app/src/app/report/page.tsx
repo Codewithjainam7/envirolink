@@ -12,6 +12,7 @@ import {
 import toast from 'react-hot-toast';
 import { useAppStore } from '@/store';
 import { getSupabase } from '@/lib/supabase';
+import { extractExifGps, stampGeoTagOnImage } from '@/lib/geotag';
 import { Report, WasteCategory, Severity } from '@/types';
 
 const CATEGORIES = [
@@ -51,6 +52,7 @@ export default function ReportPage() {
     const [description, setDescription] = useState('');
     const [isAnonymous, setIsAnonymous] = useState(false);
     const [location, setLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
+    const [geoSource, setGeoSource] = useState<'gps' | 'exif'>('gps');
     const [isGettingLocation, setIsGettingLocation] = useState(false);
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
@@ -106,8 +108,9 @@ export default function ReportPage() {
                     const data = await res.json();
                     setLocation({ lat: latitude, lng: longitude, address: data.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` });
                 } catch { setLocation({ lat: latitude, lng: longitude, address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` }); }
+                setGeoSource('gps');
                 setIsGettingLocation(false);
-                toast.success('Location detected!');
+                toast.success('GeoTag location detected!');
             },
             () => { setIsGettingLocation(false); toast.error('Enable GPS'); },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -211,6 +214,28 @@ export default function ReportPage() {
                 validPreviews.push(URL.createObjectURL(file));
                 if (imageHash) validHashes.push(imageHash);
                 addedCount++;
+
+                // Check native EXIF GPS metadata inside photo first
+                extractExifGps(file).then(async (exifGps) => {
+                    if (!exifGps) return;
+                    try {
+                        const res = await fetch(`/api/geocode?lat=${exifGps.lat}&lon=${exifGps.lng}`);
+                        const geoData = await res.json();
+                        setLocation({
+                            lat: exifGps.lat,
+                            lng: exifGps.lng,
+                            address: geoData.display_name || `${exifGps.lat.toFixed(6)}, ${exifGps.lng.toFixed(6)}`,
+                        });
+                    } catch {
+                        setLocation({
+                            lat: exifGps.lat,
+                            lng: exifGps.lng,
+                            address: `${exifGps.lat.toFixed(6)}, ${exifGps.lng.toFixed(6)}`,
+                        });
+                    }
+                    setGeoSource('exif');
+                    toast.success('Photo EXIF GeoTag captured!', { id: 'exif-geotag' });
+                }).catch(() => {});
 
                 // Update AI analysis with best result (highest confidence)
                 if (!bestAnalysis || (result.confidence > bestAnalysis.confidence)) {
@@ -372,42 +397,7 @@ export default function ReportPage() {
     };
 
     const compressImage = (file: File, maxDim = 1280, quality = 0.8): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const img = new window.Image();
-                img.onload = () => {
-                    try {
-                        let { width, height } = img;
-                        if (width > maxDim || height > maxDim) {
-                            if (width > height) {
-                                height = Math.round((height * maxDim) / width);
-                                width = maxDim;
-                            } else {
-                                width = Math.round((width * maxDim) / height);
-                                height = maxDim;
-                            }
-                        }
-                        const canvas = document.createElement('canvas');
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) {
-                            resolve(reader.result as string);
-                            return;
-                        }
-                        ctx.drawImage(img, 0, 0, width, height);
-                        resolve(canvas.toDataURL('image/jpeg', quality));
-                    } catch {
-                        resolve(reader.result as string);
-                    }
-                };
-                img.onerror = () => resolve(reader.result as string);
-                img.src = reader.result as string;
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
+        return stampGeoTagOnImage(file, { maxDim, quality });
     };
 
     const handleSubmit = async () => {
@@ -422,8 +412,30 @@ export default function ReportPage() {
         const stageTimer2 = setTimeout(() => setSubmitStage(prev => Math.max(prev, 2)), 1100);
 
         try {
-            // Compress images client-side so upload finishes in <1s
-            const base64Images = await Promise.all(images.map(file => compressImage(file)));
+            const stampTimestamp = new Date().toLocaleString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+            // Compress & permanently stamp visible EnviroLink GeoTag bar onto uploaded photos
+            const base64Images = await Promise.all(
+                images.map(file =>
+                    stampGeoTagOnImage(file, {
+                        maxDim: 1280,
+                        quality: 0.82,
+                        geo: {
+                            lat: location.lat,
+                            lng: location.lng,
+                            address: location.address,
+                            label: geoSource === 'exif' ? 'PHOTO EXIF GEOTAG' : 'CITIZEN REPORT GEOTAG',
+                            timestamp: stampTimestamp,
+                            source: geoSource,
+                        },
+                    })
+                )
+            );
             setSubmitStage(1);
 
             // Extract locality from address
@@ -591,6 +603,27 @@ export default function ReportPage() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Live GeoTag Stamp Indicator */}
+                                <div className={`mt-3 flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border text-xs ${location ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <MapPin size={15} className={location ? 'text-emerald-600 shrink-0' : 'text-amber-600 shrink-0'} />
+                                        <span className="truncate font-medium">
+                                            {location
+                                                ? `GeoTag Ready (${geoSource === 'exif' ? 'Photo EXIF' : 'Live GPS'}): ${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`
+                                                : isGettingLocation
+                                                    ? 'Acquiring live GPS GeoTag...'
+                                                    : 'GPS GeoTag needed — tap to capture location'}
+                                        </span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={getCurrentLocation}
+                                        className="font-bold underline shrink-0 hover:opacity-80"
+                                    >
+                                        {location ? 'Refresh' : 'Detect'}
+                                    </button>
+                                </div>
                             </div>
                         )}
 
@@ -804,7 +837,12 @@ export default function ReportPage() {
                                     <div className="space-y-4">
                                         <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl">
                                             <Image className="text-emerald-600" size={24} />
-                                            <div><p className="font-medium text-gray-900">{imagePreviews.length} Photo(s)</p><p className="text-sm text-gray-500">Uploaded</p></div>
+                                            <div>
+                                                <p className="font-medium text-gray-900">{imagePreviews.length} Photo(s) · GeoTagged</p>
+                                                <p className="text-xs text-emerald-700 font-medium">
+                                                    {location ? `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)} (${geoSource === 'exif' ? 'EXIF GPS' : 'Live GPS'})` : 'GeoTag embedded on upload'}
+                                                </p>
+                                            </div>
                                             <div className="ml-auto flex gap-2">
                                                 {imagePreviews.slice(0, 3).map((p, i) => <img key={i} src={p} className="w-10 h-10 rounded-lg object-cover" />)}
                                             </div>

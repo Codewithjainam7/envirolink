@@ -157,6 +157,19 @@ function ReportDetailModal({
                                 </div>
                             )}
 
+                            {/* Worker Flag / Rejection Alert */}
+                            {(report.rejectionReason || report.status === 'rejected') && (
+                                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                                    <p className="text-xs font-bold text-red-700 uppercase mb-1.5 flex items-center gap-1.5">
+                                        <AlertTriangle size={14} className="text-red-600" />
+                                        Worker Flagged · Nothing Found / Rejected
+                                    </p>
+                                    <p className="text-sm text-red-900 font-medium">
+                                        {report.rejectionReason || 'Flagged by field worker as no waste found / invalid report.'}
+                                    </p>
+                                </div>
+                            )}
+
                             {/* Timeline */}
                             <div className="bg-gray-50 rounded-xl p-4">
                                 <p className="text-xs font-semibold text-gray-500 uppercase mb-3">Timeline</p>
@@ -200,22 +213,40 @@ function ReportDetailModal({
                         <div className="space-y-5">
                             {/* Images */}
                             <div className="bg-gray-50 rounded-xl p-4">
-                                <p className="text-xs font-semibold text-gray-500 uppercase mb-3 flex items-center gap-2">
-                                    <ImageIcon size={14} />
-                                    Report Images
-                                </p>
+                                <div className="flex items-center justify-between mb-3">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-2">
+                                        <ImageIcon size={14} />
+                                        Report &amp; Verification Photos
+                                    </p>
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                        <MapPin size={10} />
+                                        GeoTagged Evidence
+                                    </span>
+                                </div>
                                 {report.images && report.images.length > 0 ? (
                                     <div className="grid grid-cols-2 gap-3">
-                                        {report.images.map((img, idx) => (
-                                            <div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-200">
-                                                <img
-                                                    src={img.url}
-                                                    alt={`Report image ${idx + 1}`}
-                                                    className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"
-                                                    onClick={() => window.open(img.url, '_blank')}
-                                                />
-                                            </div>
-                                        ))}
+                                        {report.images.map((img, idx) => {
+                                            const isWorkerProof = /worker-(resolved|nothing_found)/i.test(img.url || '');
+                                            return (
+                                                <div key={idx} className="relative aspect-square rounded-xl overflow-hidden bg-gray-200">
+                                                    <img
+                                                        src={img.url}
+                                                        alt={isWorkerProof ? `Worker Verification ${idx + 1}` : `Citizen Report ${idx + 1}`}
+                                                        className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"
+                                                        onClick={() => window.open(img.url, '_blank')}
+                                                    />
+                                                    <span
+                                                        className={`absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-bold shadow-sm ${
+                                                            isWorkerProof
+                                                                ? 'bg-emerald-600/90 text-white'
+                                                                : 'bg-black/65 text-white'
+                                                        }`}
+                                                    >
+                                                        {isWorkerProof ? 'Worker GeoTag Proof' : 'Citizen GeoTag'}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 ) : (
                                     <div className="flex flex-col items-center justify-center py-8 text-gray-400">

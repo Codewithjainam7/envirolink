@@ -65,33 +65,44 @@ function getCitizenRank(points: number): string {
 const MY_REPORTS_IDS_KEY = 'envirolink_my_report_ids';
 const MY_REPORTS_CACHE_KEY = 'envirolink_my_reports_cache';
 
-function getLocalReportIds(): string[] {
+function getIdsKey(userId?: string | null): string {
+    return `${MY_REPORTS_IDS_KEY}:${userId || 'guest'}`;
+}
+
+function getCacheKey(userId?: string | null): string {
+    return `${MY_REPORTS_CACHE_KEY}:${userId || 'guest'}`;
+}
+
+function getLocalReportIds(userId?: string | null): string[] {
     if (typeof window === 'undefined') return [];
     try {
-        const stored = localStorage.getItem(MY_REPORTS_IDS_KEY);
+        const stored = localStorage.getItem(getIdsKey(userId));
         return stored ? JSON.parse(stored) : [];
     } catch {
         return [];
     }
 }
 
-function saveLocalReportId(id: string) {
+function saveLocalReportId(id: string, userId?: string | null) {
     if (typeof window === 'undefined' || !id) return;
     try {
-        const current = getLocalReportIds();
+        const current = getLocalReportIds(userId);
         if (!current.includes(id)) {
             current.unshift(id);
-            localStorage.setItem(MY_REPORTS_IDS_KEY, JSON.stringify(current));
+            localStorage.setItem(getIdsKey(userId), JSON.stringify(current));
         }
     } catch (e) {
         console.error('Error saving report ID to localStorage:', e);
     }
 }
 
-function getLocalCachedReports(): Report[] {
+function getLocalCachedReports(userId?: string | null): Report[] {
     if (typeof window === 'undefined') return [];
     try {
-        const stored = localStorage.getItem(MY_REPORTS_CACHE_KEY);
+        // Clear legacy un-scoped shared cache keys so accounts never share reports
+        localStorage.removeItem(MY_REPORTS_IDS_KEY);
+        localStorage.removeItem(MY_REPORTS_CACHE_KEY);
+        const stored = localStorage.getItem(getCacheKey(userId));
         return stored ? JSON.parse(stored) : [];
     } catch {
         return [];
@@ -166,7 +177,7 @@ async function restInsert<T = any>(
     return { data: Array.isArray(parsed) ? parsed[0] : parsed, error: null };
 }
 
-function saveLocalCachedReport(report: Report) {
+function saveLocalCachedReport(report: Report, userId?: string | null) {
     if (typeof window === 'undefined' || !report) return;
     try {
         // Avoid storing large base64 data URLs in localStorage (5MB limit)
@@ -174,9 +185,9 @@ function saveLocalCachedReport(report: Report) {
             ...report,
             images: (report.images || []).filter(img => img.url && !img.url.startsWith('data:')),
         };
-        const current = getLocalCachedReports().filter(r => r.id !== report.id && r.reportId !== report.reportId);
+        const current = getLocalCachedReports(userId).filter(r => r.id !== report.id && r.reportId !== report.reportId);
         current.unshift(lightweightReport);
-        localStorage.setItem(MY_REPORTS_CACHE_KEY, JSON.stringify(current.slice(0, 100)));
+        localStorage.setItem(getCacheKey(userId), JSON.stringify(current.slice(0, 100)));
     } catch (e) {
         console.warn('Error saving cached report to localStorage:', e);
     }
@@ -456,7 +467,12 @@ export const useAppStore = create<AppState>((set, get) => ({
                     createdAt: session.user.created_at || new Date().toISOString(),
                 };
 
-                set({ user: userData, isAuthenticated: true });
+                const prevUserId = get().user?.id;
+                set({
+                    user: userData,
+                    isAuthenticated: true,
+                    ...(prevUserId && prevUserId !== userData.id ? { userReports: [] } : {}),
+                });
                 get().fetchUserReports();
             };
 
@@ -743,9 +759,9 @@ export const useAppStore = create<AppState>((set, get) => ({
                 updatedAt: now,
             };
 
-            saveLocalReportId(effectiveId);
-            saveLocalReportId(effectiveReportId);
-            saveLocalCachedReport(createdReport);
+            saveLocalReportId(effectiveId, user?.id);
+            saveLocalReportId(effectiveReportId, user?.id);
+            saveLocalCachedReport(createdReport, user?.id);
 
             set((state) => ({
                 userReports: [createdReport, ...state.userReports.filter(r => r.id !== createdReport.id)],
@@ -843,7 +859,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
             // If Supabase has no reports or error, combine local cached reports with demo seed reports
             if (!loadedFromSupabase || mappedReports.length === 0) {
-                const localReports = getLocalCachedReports();
+                const localReports = getLocalCachedReports(get().user?.id);
                 const combined = [...localReports];
                 DEFAULT_DEMO_REPORTS.forEach(demo => {
                     if (!combined.some(r => r.id === demo.id || r.reportId === demo.reportId)) {
@@ -888,24 +904,24 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
     },
 
-    // Fetch user's reports (from Supabase and localStorage)
+    // Fetch user's reports (strictly isolated per signed-in user account)
     fetchUserReports: async () => {
         const { user } = get();
         set({ isLoading: true });
 
         try {
-            const localCached = getLocalCachedReports();
-            const localIds = getLocalReportIds();
+            const localCached = getLocalCachedReports(user?.id);
+            const localIds = getLocalReportIds(user?.id);
             const reportsMap = new Map<string, Report>();
 
-            // Pre-seed map with local cached reports
+            // Pre-seed map with ONLY this account's local cached reports (e.g., anonymous filings by this user)
             localCached.forEach(r => reportsMap.set(r.id, r));
 
             try {
                 const supabase = getSupabase();
                 let remoteReports: any[] = [];
 
-                // 1. Fetch user reports if logged in
+                // 1. Fetch reports strictly belonging to this signed-in user
                 if (user && user.id) {
                     const { data: userDbReports } = await supabase
                         .from('reports')
@@ -918,7 +934,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                     }
                 }
 
-                // 2. Fetch any reports tracked by ID in localStorage
+                // 2. Fetch any anonymous/tracked reports explicitly saved under THIS account's key
                 if (localIds.length > 0) {
                     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
                     const uuidIds = localIds.filter(id => uuidRegex.test(id));
@@ -941,8 +957,18 @@ export const useAppStore = create<AppState>((set, get) => ({
                     }
                 }
 
-                // Deduplicate remote reports by id
-                const uniqueRemote = Array.from(new Map(remoteReports.map(r => [r.id, r])).values());
+                // Deduplicate remote reports AND enforce per-account isolation:
+                // Reject any record explicitly owned by another user_id
+                const uniqueRemote = Array.from(new Map(remoteReports.map(r => [r.id, r])).values())
+                    .filter((r: any) => !r.user_id || !user?.id || r.user_id === user.id);
+
+                // Drop any stale cached IDs that were deleted or belong to another user
+                const remoteIdsSet = new Set(uniqueRemote.map((r: any) => r.id));
+                Array.from(reportsMap.keys()).forEach((cachedId) => {
+                    if (!cachedId.startsWith('local-') && !remoteIdsSet.has(cachedId)) {
+                        reportsMap.delete(cachedId);
+                    }
+                });
 
                 if (uniqueRemote.length > 0) {
                     const reportUuids = uniqueRemote.map(r => r.id);
@@ -1000,7 +1026,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                         };
 
                         reportsMap.set(r.id, mapped);
-                        saveLocalCachedReport(mapped);
+                        saveLocalCachedReport(mapped, user?.id);
                     });
                 }
             } catch (networkErr) {
@@ -1035,9 +1061,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             r.id?.toLowerCase() === query.toLowerCase()
         );
         if (inGlobal) {
-            saveLocalReportId(inGlobal.id);
-            saveLocalReportId(inGlobal.reportId);
-            saveLocalCachedReport(inGlobal);
+            const uid = get().user?.id;
+            saveLocalReportId(inGlobal.id, uid);
+            saveLocalReportId(inGlobal.reportId, uid);
+            saveLocalCachedReport(inGlobal, uid);
             await get().fetchUserReports();
             return inGlobal;
         }
@@ -1087,9 +1114,10 @@ export const useAppStore = create<AppState>((set, get) => ({
                     updatedAt: reportRecord.updated_at,
                 };
 
-                saveLocalReportId(mapped.id);
-                saveLocalReportId(mapped.reportId);
-                saveLocalCachedReport(mapped);
+                const uid = get().user?.id;
+                saveLocalReportId(mapped.id, uid);
+                saveLocalReportId(mapped.reportId, uid);
+                saveLocalCachedReport(mapped, uid);
                 await get().fetchUserReports();
                 return mapped;
             }
@@ -1104,10 +1132,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     removeTrackedReport: (id: string) => {
         if (typeof window === 'undefined') return;
         try {
-            const currentIds = getLocalReportIds().filter(i => i !== id);
-            localStorage.setItem(MY_REPORTS_IDS_KEY, JSON.stringify(currentIds));
-            const currentCache = getLocalCachedReports().filter(r => r.id !== id && r.reportId !== id);
-            localStorage.setItem(MY_REPORTS_CACHE_KEY, JSON.stringify(currentCache));
+            const uid = get().user?.id;
+            const currentIds = getLocalReportIds(uid).filter(i => i !== id);
+            localStorage.setItem(getIdsKey(uid), JSON.stringify(currentIds));
+            const currentCache = getLocalCachedReports(uid).filter(r => r.id !== id && r.reportId !== id);
+            localStorage.setItem(getCacheKey(uid), JSON.stringify(currentCache));
             set((state) => ({
                 userReports: state.userReports.filter(r => r.id !== id && r.reportId !== id)
             }));
@@ -1140,10 +1169,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
 
             if (typeof window !== 'undefined') {
-                const currentIds = getLocalReportIds().filter(i => i !== report.id && i !== report.reportId);
-                localStorage.setItem(MY_REPORTS_IDS_KEY, JSON.stringify(currentIds));
-                const currentCache = getLocalCachedReports().filter(r => r.id !== report.id && r.reportId !== report.reportId);
-                localStorage.setItem(MY_REPORTS_CACHE_KEY, JSON.stringify(currentCache));
+                const uid = get().user?.id;
+                const currentIds = getLocalReportIds(uid).filter(i => i !== report.id && i !== report.reportId);
+                localStorage.setItem(getIdsKey(uid), JSON.stringify(currentIds));
+                const currentCache = getLocalCachedReports(uid).filter(r => r.id !== report.id && r.reportId !== report.reportId);
+                localStorage.setItem(getCacheKey(uid), JSON.stringify(currentCache));
             }
 
             set((state) => ({
@@ -1268,6 +1298,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Sign out
     logout: async () => {
         try {
+            const prevUserId = get().user?.id;
             const supabase = getSupabase();
             await supabase.auth.signOut();
             set({
@@ -1276,11 +1307,15 @@ export const useAppStore = create<AppState>((set, get) => ({
                 userReports: [],
                 selectedReport: null
             });
-            // Clear local storage on sign out
+            // Clear local storage caches cleanly on sign out
             if (typeof window !== 'undefined') {
                 localStorage.removeItem('app-storage');
                 localStorage.removeItem(MY_REPORTS_IDS_KEY);
                 localStorage.removeItem(MY_REPORTS_CACHE_KEY);
+                if (prevUserId) {
+                    localStorage.removeItem(getIdsKey(prevUserId));
+                    localStorage.removeItem(getCacheKey(prevUserId));
+                }
             }
         } catch (error) {
             console.error('Logout failed:', error);

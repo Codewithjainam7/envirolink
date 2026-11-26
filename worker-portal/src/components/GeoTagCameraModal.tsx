@@ -250,20 +250,27 @@ export default function GeoTagCameraModal({
                         )}
 
                         <div
-                            className={`absolute bottom-3 left-3 right-3 rounded-xl backdrop-blur-md border-l-4 px-3.5 py-2.5 text-white shadow-lg ${
-                                isFlagged
-                                    ? 'bg-[#451a03]/85 border-amber-400'
-                                    : 'bg-[#022c22]/85 border-emerald-400'
+                            className={`absolute bottom-3 left-3 right-3 rounded-2xl bg-slate-900/75 backdrop-blur-md border px-3 py-2.5 text-white shadow-xl flex items-center gap-3 ${
+                                isFlagged ? 'border-amber-400/35' : 'border-white/15'
                             }`}
                         >
-                            <p className={`text-[11px] font-bold tracking-wide flex items-center gap-1.5 ${isFlagged ? 'text-amber-300' : 'text-emerald-300'}`}>
-                                <MapPin size={12} />
-                                {workerCoords
-                                    ? `LAT ${workerCoords.lat.toFixed(6)} · LNG ${workerCoords.lng.toFixed(6)} · ${Math.round(workerCoords.distanceMeters)}m FROM PIN`
-                                    : 'CAPTURING WORKER GPS GEOTAG...'}
-                            </p>
-                            <p className="text-xs text-white/95 truncate mt-0.5">{address}</p>
-                            <p className="text-[10px] text-white/75 mt-0.5 font-mono">{clockStr}</p>
+                            <div className="w-12 h-12 rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center shrink-0 relative overflow-hidden">
+                                <div className="absolute inset-0 opacity-30 bg-[linear-gradient(to_right,#94a3b8_1px,transparent_1px),linear-gradient(to_bottom,#94a3b8_1px,transparent_1px)] bg-[size:12px_12px]" />
+                                <MapPin size={18} className={`${isFlagged ? 'text-amber-400' : 'text-emerald-400'} relative z-10`} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-xs font-semibold text-white truncate">
+                                    {address.split(',').slice(0, 3).join(', ')}
+                                </p>
+                                <p className="text-[11px] text-slate-200 mt-0.5 truncate">
+                                    {workerCoords
+                                        ? `Lat ${workerCoords.lat.toFixed(6)}°  Long ${workerCoords.lng.toFixed(6)}° (${Math.round(workerCoords.distanceMeters)}m)`
+                                        : 'Capturing GPS coordinates...'}
+                                </p>
+                                <p className={`text-[10px] mt-0.5 truncate ${isFlagged ? 'text-amber-200' : 'text-slate-300'}`}>
+                                    {clockStr} · {isFlagged ? 'Flagged · Nothing Found' : 'Worker Proof · GeoTag'}
+                                </p>
+                            </div>
                         </div>
                     </>
                 )}

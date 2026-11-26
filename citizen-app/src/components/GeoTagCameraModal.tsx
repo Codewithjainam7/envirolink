@@ -244,18 +244,25 @@ export default function GeoTagCameraModal({
                             </div>
                         )}
 
-                        {/* Live GeoTag HUD overlay on Viewfinder */}
-                        <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-[#022c22]/85 backdrop-blur-md border-l-4 border-emerald-400 px-3.5 py-2.5 text-white shadow-lg">
-                            <p className="text-[11px] font-bold text-emerald-300 tracking-wide flex items-center gap-1.5">
-                                <MapPin size={12} />
-                                {location
-                                    ? `LAT ${location.lat.toFixed(6)} · LNG ${location.lng.toFixed(6)}`
-                                    : 'ACQUIRING GPS GEOTAG...'}
-                            </p>
-                            <p className="text-xs text-emerald-50 truncate mt-0.5">
-                                {location?.address || 'Locating street address...'}
-                            </p>
-                            <p className="text-[10px] text-emerald-200/80 mt-0.5 font-mono">{clockStr}</p>
+                        {/* Live GPS Map Camera HUD overlay */}
+                        <div className="absolute bottom-3 left-3 right-3 rounded-2xl bg-slate-900/75 backdrop-blur-md border border-white/15 px-3 py-2.5 text-white shadow-xl flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center shrink-0 relative overflow-hidden">
+                                <div className="absolute inset-0 opacity-30 bg-[linear-gradient(to_right,#94a3b8_1px,transparent_1px),linear-gradient(to_bottom,#94a3b8_1px,transparent_1px)] bg-[size:12px_12px]" />
+                                <MapPin size={18} className="text-emerald-400 relative z-10" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-xs font-semibold text-white truncate">
+                                    {location?.address?.split(',').slice(0, 3).join(', ') || 'Locating street address...'}
+                                </p>
+                                <p className="text-[11px] text-slate-200 mt-0.5 truncate">
+                                    {location
+                                        ? `Lat ${location.lat.toFixed(6)}°  Long ${location.lng.toFixed(6)}°`
+                                        : 'Acquiring GPS coordinates...'}
+                                </p>
+                                <p className="text-[10px] text-slate-300 mt-0.5 truncate">
+                                    {clockStr} · EnviroLink GeoTag
+                                </p>
+                            </div>
                         </div>
                     </>
                 )}

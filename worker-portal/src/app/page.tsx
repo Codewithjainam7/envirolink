@@ -135,26 +135,36 @@ export default function WorkerDashboard() {
       setWorker(workerData);
 
       // Fetch assigned tasks (including multi-worker shared crew tasks)
-      const { data: tasksData } = await supabase
+      const { data: tasksData, error: tasksError } = await supabase
         .from('reports')
         .select('*')
         .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
         .in('status', ['assigned', 'in_progress'])
         .order('created_at', { ascending: false });
 
-      // Fetch images for each report
-      const tasksWithImages = await Promise.all(
-        (tasksData || []).map(async (task) => {
-          const { data: imagesData } = await supabase
-            .from('report_images')
-            .select('url')
-            .eq('report_id', task.id);
-          return {
-            ...task,
-            images: imagesData?.map((img: any) => img.url) || []
-          };
-        })
-      );
+      if (tasksError) {
+        console.warn('Error fetching assigned tasks:', tasksError);
+      }
+
+      // Batch fetch images for all assigned tasks in a single query
+      const taskIds = (tasksData || []).map((t) => t.id);
+      const imagesByReport = new Map<string, string[]>();
+      if (taskIds.length > 0) {
+        const { data: imagesData } = await supabase
+          .from('report_images')
+          .select('report_id, url')
+          .in('report_id', taskIds);
+        (imagesData || []).forEach((img: any) => {
+          const arr = imagesByReport.get(img.report_id) || [];
+          arr.push(img.url);
+          imagesByReport.set(img.report_id, arr);
+        });
+      }
+
+      const tasksWithImages = (tasksData || []).map((task) => ({
+        ...task,
+        images: imagesByReport.get(task.id) || [],
+      }));
 
       setTasks(tasksWithImages);
 

@@ -42,6 +42,15 @@ export default function ProfilePage() {
     useEffect(() => {
         setMounted(true);
         initializeAuth();
+
+        // Safety net: ensure auth gate never stays stuck indefinitely on slow mobile/WebView loads
+        const safetyTimer = setTimeout(() => {
+            if (!useAppStore.getState().isAuthChecked) {
+                useAppStore.setState({ isAuthChecked: true });
+            }
+        }, 4000);
+
+        return () => clearTimeout(safetyTimer);
     }, [initializeAuth]);
 
     // Protect Profile: redirect to login if not signed in
@@ -119,11 +128,19 @@ export default function ProfilePage() {
     // Never render Profile UI before auth check completes and user is confirmed signed in
     if (!mounted || !isAuthChecked || !isAuthenticated || !user) {
         return (
-            <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3 text-gray-500">
+            <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3 text-gray-500 px-4 text-center">
                 <Loader2 size={28} className="animate-spin text-emerald-500" />
                 <p className="text-sm font-medium">
                     {isAuthChecked && !isAuthenticated ? 'Redirecting to sign in...' : 'Loading profile...'}
                 </p>
+                {isAuthChecked && !isAuthenticated && (
+                    <Link
+                        href="/login?next=/profile"
+                        className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition-colors"
+                    >
+                        Continue to Sign In
+                    </Link>
+                )}
             </div>
         );
     }

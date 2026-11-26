@@ -116,34 +116,172 @@ function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Pro
     ]);
 }
 
+function decodeBase64Url(input: string): string {
+    const b64 = input.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    return atob(padded);
+}
+
+function decodeJwtPayload(token: string): Record<string, any> | null {
+    try {
+        const parts = token.split('.');
+        if (parts.length < 2) return null;
+        return JSON.parse(decodeBase64Url(parts[1]));
+    } catch {
+        return null;
+    }
+}
+
+function parseSupabaseCookieSession(): { access_token?: string; user?: any; expires_at?: number } | null {
+    if (typeof document === 'undefined') return null;
+    try {
+        const cookies = document.cookie.split(';').map(c => c.trim());
+        const baseCookie = cookies.find(c => /^sb-[^-]+-auth-token=/.test(c));
+        const chunkCookies = cookies
+            .filter(c => /^sb-[^-]+-auth-token\.\d+=/.test(c))
+            .sort((a, b) => Number(a.split('=')[0].split('.').pop()) - Number(b.split('=')[0].split('.').pop()));
+        let raw = baseCookie
+            ? baseCookie.split('=').slice(1).join('=')
+            : chunkCookies.map(c => c.split('=').slice(1).join('=')).join('');
+        if (!raw) return null;
+        raw = decodeURIComponent(raw);
+        if (raw.startsWith('base64-')) {
+            raw = decodeBase64Url(raw.slice(7));
+        }
+        const parsed = JSON.parse(raw);
+        if (!parsed?.access_token && !parsed?.user) return null;
+
+        let user = parsed.user;
+        if (!user && parsed.access_token) {
+            const jwt = decodeJwtPayload(parsed.access_token);
+            if (jwt?.sub) {
+                user = {
+                    id: jwt.sub,
+                    email: jwt.email || '',
+                    phone: jwt.phone || '',
+                    user_metadata: jwt.user_metadata || {},
+                };
+            }
+        }
+        return { ...parsed, user };
+    } catch {
+        return null;
+    }
+}
+
 // Acquire user access token quickly without blocking indefinitely on Web navigator.locks
 async function getFastAccessToken(supabase: ReturnType<typeof getSupabase>): Promise<string | null> {
+    const cookieSession = parseSupabaseCookieSession();
+    if (cookieSession?.access_token) {
+        const notExpired = !cookieSession.expires_at || (cookieSession.expires_at * 1000 > Date.now() + 15000);
+        if (notExpired) return cookieSession.access_token;
+    }
     try {
-        const res = await withTimeout(supabase.auth.getSession(), 1500, 'Session token') as any;
+        const res = await withTimeout(supabase.auth.getSession(), 2000, 'Session token') as any;
         if (res?.data?.session?.access_token) return res.data.session.access_token;
     } catch {
-        // Fallback to parsing the Supabase SSR auth cookie directly
+        // Fallback to cached cookie token below
     }
-    if (typeof document !== 'undefined') {
-        try {
-            const cookies = document.cookie.split(';').map(c => c.trim());
-            const baseCookie = cookies.find(c => /^sb-[^-]+-auth-token=/.test(c));
-            const chunkCookies = cookies
-                .filter(c => /^sb-[^-]+-auth-token\.\d+=/.test(c))
-                .sort((a, b) => Number(a.split('=')[0].split('.').pop()) - Number(b.split('=')[0].split('.').pop()));
-            let raw = baseCookie
-                ? baseCookie.split('=').slice(1).join('=')
-                : chunkCookies.map(c => c.split('=').slice(1).join('=')).join('');
-            if (raw) {
-                raw = decodeURIComponent(raw);
-                if (raw.startsWith('base64-')) raw = atob(raw.slice(7));
-                const parsed = JSON.parse(raw);
-                if (parsed?.access_token) return parsed.access_token;
-            }
-        } catch {}
-    }
-    return null;
+    return cookieSession?.access_token || null;
 }
+
+async function restSelect<T = any>(
+    table: string,
+    queryString: string,
+    accessToken?: string | null,
+    timeoutMs = 8000
+): Promise<{ data: T[] | null; error: string | null }> {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    try {
+        const res = await fetch(`${url}/rest/v1/${table}${queryString ? `?${queryString}` : ''}`, {
+            method: 'GET',
+            signal: AbortSignal.timeout(timeoutMs),
+            headers: {
+                apikey: anonKey,
+                Authorization: `Bearer ${accessToken || anonKey}`,
+                Accept: 'application/json',
+            },
+        });
+        const text = await res.text();
+        let parsed: any = null;
+        try { parsed = text ? JSON.parse(text) : null; } catch {}
+        if (!res.ok) {
+            return {
+                data: null,
+                error: parsed?.message || parsed?.error_description || text || `HTTP ${res.status}`,
+            };
+        }
+        return { data: Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []), error: null };
+    } catch (err: any) {
+        return { data: null, error: err?.message || 'Request failed' };
+    }
+}
+
+async function restSelectWithRetry<T = any>(
+    table: string,
+    queryString: string,
+    accessToken?: string | null,
+    timeoutMs = 8000
+): Promise<{ data: T[] | null; error: string | null }> {
+    const first = await restSelect<T>(table, queryString, accessToken, timeoutMs);
+    if (!first.error) return first;
+    // Brief jittered retry for transient mobile/Wi-Fi packet drops or cold serverless wakeups
+    await new Promise(resolve => setTimeout(resolve, 350));
+    return restSelect<T>(table, queryString, accessToken, timeoutMs);
+}
+
+function mapDbReport(r: any, imagesData: any[] | null | undefined, fallbackImages?: Report['images']): Report {
+    const matchedImages = (imagesData || [])
+        .filter((img: any) => img.report_id === r.id)
+        .map((img: any) => ({
+            id: img.id,
+            url: img.url,
+            thumbnailUrl: img.url,
+            uploadedAt: img.created_at,
+        }));
+
+    return {
+        id: r.id,
+        reportId: r.report_id || `R-${String(r.id).substring(0, 6).toUpperCase()}`,
+        location: {
+            latitude: r.latitude,
+            longitude: r.longitude,
+            address: r.address,
+            locality: r.locality,
+            city: r.city,
+        },
+        images: matchedImages.length > 0 ? matchedImages : (fallbackImages || []),
+        category: r.category,
+        severity: r.severity,
+        estimatedVolume: 'medium',
+        description: r.description,
+        isAnonymous: r.is_anonymous,
+        status: r.status,
+        pointsAwarded: Boolean(r.points_awarded),
+        requiresReview: Boolean(r.requires_review),
+        rejectionReason: r.rejection_reason || undefined,
+        statusHistory: [{ status: r.status, timestamp: r.created_at }],
+        assignedTo: r.assigned_department_name ? {
+            departmentId: r.assigned_department_id || 'dept-1',
+            departmentName: r.assigned_department_name,
+            workerName: r.assigned_worker_name,
+            assignedAt: r.updated_at || r.created_at,
+        } : undefined,
+        resolution: r.resolution_notes ? {
+            beforeImages: [],
+            afterImages: [],
+            notes: r.resolution_notes,
+            completedAt: r.resolved_at || r.updated_at,
+            completedBy: r.assigned_worker_name || 'Municipal Team',
+        } : undefined,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+    };
+}
+
+let inFlightReportsPromise: Promise<void> | null = null;
+let inFlightUserReports: { uid: string | null; promise: Promise<void> } | null = null;
 
 async function restInsert<T = any>(
     table: string,
@@ -379,7 +517,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     resetNewReport: () => set({ newReport: initialNewReport }),
 
-    // Initialize auth from Supabase session
+    // Initialize auth from Supabase session without blocking UI on slow network or locks
     initializeAuth: async () => {
         if (get().isAuthInitialized) return;
         set({ isAuthInitialized: true });
@@ -387,76 +525,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         try {
             const supabase = getSupabase();
 
-            const processSession = async (session: any) => {
-                if (!session?.user) {
-                    set({ user: null, isAuthenticated: false, userReports: [] });
-                    return;
-                }
-
-                // Get user metadata from Google OAuth (always available)
-                const meta = session.user.user_metadata || {};
-                const fullName = meta.full_name || meta.name || session.user.email?.split('@')[0] || 'User';
+            const buildBaseUser = (authUser: any): User => {
+                const existing = get().user;
+                const sameUser = existing && existing.id === authUser.id;
+                const meta = authUser.user_metadata || {};
+                const fullName = meta.full_name || meta.name || authUser.email?.split('@')[0] || 'User';
                 const nameParts = fullName.split(' ');
+                const userPoints = sameUser ? (existing.engagement?.points ?? 0) : 0;
 
-                // Try to get additional profile data from profiles table, create if doesn't exist
-                let profileData: any = null;
-                try {
-                    const { data, error } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', session.user.id)
-                        .single();
-
-                    if (error || !data) {
-                        // Profile doesn't exist, create it
-                        const firstName = nameParts[0] || 'User';
-                        const lastName = nameParts.slice(1).join(' ') || '';
-                        const avatar = meta.avatar_url || meta.picture || '';
-
-                        const { data: newProfile } = await (supabase
-                            .from('profiles') as any)
-                            .upsert({
-                                id: session.user.id,
-                                first_name: firstName,
-                                last_name: lastName,
-                                avatar_url: avatar,
-                                points: 0,
-                                reports_submitted: 0,
-                                reports_resolved: 0,
-                                trust_score: 100,
-                                false_reports_count: 0
-                            }, { onConflict: 'id' })
-                            .select()
-                            .single();
-                        profileData = newProfile;
-                    } else {
-                        profileData = data;
-                    }
-                } catch (e) {
-                    // Profiles table may not exist yet - that's okay
-                    console.log('Profiles table not available, using OAuth data');
-                }
-
-                const userPoints = profileData?.points || 0;
-                const userData: User = {
-                    id: session.user.id,
-                    email: session.user.email || '',
-                    phone: session.user.phone || '',
+                return {
+                    id: authUser.id,
+                    email: authUser.email || '',
+                    phone: authUser.phone || '',
                     profile: {
-                        firstName: profileData?.first_name || nameParts[0] || 'User',
-                        lastName: profileData?.last_name || nameParts.slice(1).join(' ') || '',
-                        avatar: profileData?.avatar_url || meta.avatar_url || meta.picture || '',
+                        firstName: sameUser ? (existing.profile?.firstName || nameParts[0] || 'User') : (nameParts[0] || 'User'),
+                        lastName: sameUser ? (existing.profile?.lastName || nameParts.slice(1).join(' ') || '') : (nameParts.slice(1).join(' ') || ''),
+                        avatar: sameUser ? (existing.profile?.avatar || meta.avatar_url || meta.picture || '') : (meta.avatar_url || meta.picture || ''),
                         preferredLanguage: 'en',
                     },
                     role: 'citizen',
                     engagement: {
-                        totalReports: profileData?.reports_submitted || 0,
-                        resolvedReports: profileData?.reports_resolved || 0,
-                        badges: [],
+                        totalReports: sameUser ? (existing.engagement?.totalReports ?? 0) : 0,
+                        resolvedReports: sameUser ? (existing.engagement?.resolvedReports ?? 0) : 0,
+                        badges: sameUser ? (existing.engagement?.badges || []) : [],
                         points: userPoints,
                         rank: getCitizenRank(userPoints),
-                        trustScore: profileData?.trust_score ?? 100,
-                        falseReportsCount: profileData?.false_reports_count ?? 0,
+                        trustScore: sameUser ? (existing.engagement?.trustScore ?? 100) : 100,
+                        falseReportsCount: sameUser ? (existing.engagement?.falseReportsCount ?? 0) : 0,
                     },
                     preferences: {
                         notifications: { push: true, email: true, sms: false },
@@ -464,46 +559,145 @@ export const useAppStore = create<AppState>((set, get) => ({
                         locationSharing: true,
                     },
                     isVerified: true,
-                    createdAt: session.user.created_at || new Date().toISOString(),
+                    createdAt: authUser.created_at || new Date().toISOString(),
                 };
-
-                const prevUserId = get().user?.id;
-                set({
-                    user: userData,
-                    isAuthenticated: true,
-                    ...(prevUserId && prevUserId !== userData.id ? { userReports: [] } : {}),
-                });
-                get().fetchUserReports();
             };
 
-            // Initial session check (with cookie-token fallback so redirected OAuth cookies hydrate reliably)
-            let { data: { session } } = await supabase.auth.getSession();
-            if (!session?.user) {
-                const cookieToken = await getFastAccessToken(supabase);
-                if (cookieToken) {
-                    try {
-                        const { data: userRes } = await withTimeout(supabase.auth.getUser(cookieToken), 4000, 'Auth user check') as any;
-                        if (userRes?.user) {
-                            session = { user: userRes.user, access_token: cookieToken } as any;
-                        }
-                    } catch {
-                        // Ignore invalid/expired cookie token
-                    }
-                }
-            }
-            await processSession(session);
+            const hydrateProfileInBackground = async (authUser: any, accessToken?: string | null) => {
+                const meta = authUser.user_metadata || {};
+                const fullName = meta.full_name || meta.name || authUser.email?.split('@')[0] || 'User';
+                const nameParts = fullName.split(' ');
 
-            // Listen for subsequent auth changes cleanly
-            supabase.auth.onAuthStateChange((event, nextSession) => {
-                if (event === 'INITIAL_SESSION' && !nextSession?.user && get().isAuthenticated) {
+                try {
+                    const token = accessToken || await getFastAccessToken(supabase);
+                    const { data: rows } = await restSelect(
+                        'profiles',
+                        `select=*&id=eq.${encodeURIComponent(authUser.id)}&limit=1`,
+                        token,
+                        6000
+                    );
+
+                    let profileData: any = rows?.[0] || null;
+                    if (!profileData) {
+                        const firstName = nameParts[0] || 'User';
+                        const lastName = nameParts.slice(1).join(' ') || '';
+                        const avatar = meta.avatar_url || meta.picture || '';
+                        const upsertRes = await restInsert(
+                            'profiles',
+                            {
+                                id: authUser.id,
+                                first_name: firstName,
+                                last_name: lastName,
+                                avatar_url: avatar,
+                                points: 0,
+                                reports_submitted: 0,
+                                reports_resolved: 0,
+                                trust_score: 100,
+                                false_reports_count: 0,
+                            },
+                            token,
+                            6000,
+                            'resolution=merge-duplicates,return=representation'
+                        );
+                        profileData = upsertRes.data;
+                    }
+
+                    const currentUser = get().user;
+                    if (!profileData || !currentUser || currentUser.id !== authUser.id) return;
+
+                    const userPoints = profileData.points ?? currentUser.engagement?.points ?? 0;
+                    set({
+                        user: {
+                            ...currentUser,
+                            profile: {
+                                ...currentUser.profile,
+                                firstName: profileData.first_name || currentUser.profile.firstName,
+                                lastName: profileData.last_name || currentUser.profile.lastName,
+                                avatar: profileData.avatar_url || currentUser.profile.avatar,
+                            },
+                            engagement: {
+                                ...currentUser.engagement,
+                                totalReports: profileData.reports_submitted ?? currentUser.engagement.totalReports,
+                                resolvedReports: profileData.reports_resolved ?? currentUser.engagement.resolvedReports,
+                                points: userPoints,
+                                rank: getCitizenRank(userPoints),
+                                trustScore: profileData.trust_score ?? 100,
+                                falseReportsCount: profileData.false_reports_count ?? 0,
+                            },
+                        },
+                    });
+                } catch {
+                    // Profile enrichment is best-effort and never blocks rendering
+                }
+            };
+
+            const processSession = async (session: any) => {
+                if (!session?.user) {
+                    set({ user: null, isAuthenticated: false, isAuthChecked: true, userReports: [] });
                     return;
                 }
-                processSession(nextSession).finally(() => {
-                    set({ isAuthChecked: true });
+
+                const prevUserId = get().user?.id;
+                const baseUser = buildBaseUser(session.user);
+
+                // Unblock UI immediately with verified session user metadata before DB enrichment
+                set({
+                    user: baseUser,
+                    isAuthenticated: true,
+                    isAuthChecked: true,
+                    ...(prevUserId && prevUserId !== baseUser.id ? { userReports: [] } : {}),
                 });
+
+                void get().fetchUserReports();
+                void hydrateProfileInBackground(session.user, session.access_token);
+            };
+
+            // 1. Register auth listener immediately so OAuth redirects & token refreshes never slip by
+            supabase.auth.onAuthStateChange((event, nextSession) => {
+                if (event === 'INITIAL_SESSION' && !nextSession?.user && get().isAuthenticated) {
+                    set({ isAuthChecked: true });
+                    return;
+                }
+                void processSession(nextSession);
             });
+
+            // 2. Fast synchronous SSR cookie check: hydrate profile/Navbar in 0ms if session cookie exists
+            const cookieSession = parseSupabaseCookieSession();
+            if (cookieSession?.user) {
+                await processSession(cookieSession);
+            }
+
+            // 3. Reconcile authoritative session with tight timeout so Chrome/WebView never hangs
+            let session: any = null;
+            try {
+                const res = await withTimeout(supabase.auth.getSession(), 2500, 'Auth session') as any;
+                session = res?.data?.session ?? null;
+            } catch {
+                // Keep cookie session or continue gracefully below
+            }
+
+            if (!session?.user && cookieSession?.access_token) {
+                try {
+                    const { data: userRes } = await withTimeout(
+                        supabase.auth.getUser(cookieSession.access_token),
+                        3500,
+                        'Auth user check'
+                    ) as any;
+                    if (userRes?.user) {
+                        session = { user: userRes.user, access_token: cookieSession.access_token };
+                    }
+                } catch {
+                    // Preserve optimistic cookie user only if token hasn't hard-failed
+                }
+            }
+
+            if (session?.user) {
+                await processSession(session);
+            } else if (!cookieSession?.user) {
+                await processSession(null);
+            }
         } catch (error) {
-            console.warn('Auth initialization deferred (waiting for active Supabase credentials)');
+            console.warn('Auth initialization deferred (waiting for active Supabase credentials)', error);
         } finally {
             set({ isAuthChecked: true });
         }
@@ -805,242 +999,227 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
     },
 
-    // Fetch all reports from Supabase with graceful fallback
+    // Fetch all reports from Supabase cleanly via direct REST (lock-free & bounded)
     fetchReports: async () => {
-        set({ isLoading: true });
-        try {
-            let mappedReports: Report[] = [];
-            let loadedFromSupabase = false;
+        if (inFlightReportsPromise) return inFlightReportsPromise;
 
+        const run = async () => {
+            set({ isLoading: true });
             try {
-                const supabase = getSupabase();
-                const { data: reportsData, error } = await supabase
-                    .from('reports')
-                    .select('*')
-                    .order('created_at', { ascending: false });
+                let mappedReports: Report[] = [];
+                let loadedFromSupabase = false;
+                let fetchErrored = false;
 
-                if (!error && reportsData && reportsData.length > 0) {
-                    const { data: imagesData } = await supabase.from('report_images').select('*');
+                try {
+                    const supabase = getSupabase();
+                    const token = await getFastAccessToken(supabase);
+                    const { data: reportsData, error } = await restSelectWithRetry<any>(
+                        'reports',
+                        'select=*&order=created_at.desc&limit=250',
+                        token,
+                        8000
+                    );
 
-                    mappedReports = (reportsData || []).map((r: any) => ({
-                        id: r.id,
-                        reportId: r.report_id || `R-${r.id.substring(0, 6).toUpperCase()}`,
-                        location: {
-                            latitude: r.latitude,
-                            longitude: r.longitude,
-                            address: r.address,
-                            locality: r.locality,
-                            city: r.city,
-                        },
-                        images: imagesData?.filter((img: any) => img.report_id === r.id).map((img: any) => ({
-                            id: img.id,
-                            url: img.url,
-                            thumbnailUrl: img.url,
-                            uploadedAt: img.created_at,
-                        })) || [],
-                        category: r.category,
-                        severity: r.severity,
-                        estimatedVolume: 'medium',
-                        description: r.description,
-                        isAnonymous: r.is_anonymous,
-                        status: r.status,
-                        pointsAwarded: Boolean(r.points_awarded),
-                        requiresReview: Boolean(r.requires_review),
-                        rejectionReason: r.rejection_reason || undefined,
-                        statusHistory: [{ status: r.status, timestamp: r.created_at }],
-                        createdAt: r.created_at,
-                        updatedAt: r.updated_at,
-                    }));
-                    loadedFromSupabase = true;
-                }
-            } catch (dbErr) {
-                console.warn('Supabase reports fetch deferred (using local cache or demo data):', dbErr);
-            }
+                    if (error) {
+                        fetchErrored = true;
+                        console.warn('Supabase reports fetch warning:', error);
+                    } else if (reportsData) {
+                        let imagesData: any[] = [];
+                        if (reportsData.length > 0) {
+                            const ids = reportsData.map((r: any) => r.id).filter(Boolean);
+                            if (ids.length > 0) {
+                                const imgRes = await restSelect<any>(
+                                    'report_images',
+                                    `select=*&report_id=in.(${ids.map((id: string) => encodeURIComponent(id)).join(',')})`,
+                                    token,
+                                    8000
+                                );
+                                imagesData = imgRes.data || [];
+                            }
+                        }
 
-            // If Supabase has no reports or error, combine local cached reports with demo seed reports
-            if (!loadedFromSupabase || mappedReports.length === 0) {
-                const localReports = getLocalCachedReports(get().user?.id);
-                const combined = [...localReports];
-                DEFAULT_DEMO_REPORTS.forEach(demo => {
-                    if (!combined.some(r => r.id === demo.id || r.reportId === demo.reportId)) {
-                        combined.push(demo);
+                        mappedReports = reportsData.map((r: any) => mapDbReport(r, imagesData));
+                        loadedFromSupabase = true;
                     }
+                } catch (dbErr) {
+                    fetchErrored = true;
+                    console.warn('Supabase reports fetch deferred (using local cache or existing data):', dbErr);
+                }
+
+                // Preserve already-loaded real reports on transient network glitches
+                if (fetchErrored && get().reports.some(r => !r.id.startsWith('demo-'))) {
+                    set({ isLoading: false });
+                    return;
+                }
+
+                // If Supabase has no reports or error on cold start, combine local cached reports with demo seed reports
+                if (!loadedFromSupabase || mappedReports.length === 0) {
+                    const localReports = getLocalCachedReports(get().user?.id);
+                    const combined = [...localReports];
+                    DEFAULT_DEMO_REPORTS.forEach(demo => {
+                        if (!combined.some(r => r.id === demo.id || r.reportId === demo.reportId)) {
+                            combined.push(demo);
+                        }
+                    });
+                    mappedReports = combined;
+                }
+
+                // Calculate stats with baseline values for landing page
+                const BASELINE_REPORTS = 500;
+                const BASELINE_RESOLVED = 500;
+                const BASELINE_RATE = 96;
+
+                const realTotal = mappedReports.length;
+                const realResolved = mappedReports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
+                const pending = mappedReports.filter(r => r.status === 'submitted').length;
+                const inProgress = mappedReports.filter(r => ['under_review', 'assigned', 'in_progress'].includes(r.status)).length;
+
+                set({
+                    reports: mappedReports,
+                    cityStats: {
+                        totalReports: BASELINE_REPORTS + realTotal,
+                        resolvedReports: BASELINE_RESOLVED + realResolved,
+                        pendingReports: pending,
+                        inProgressReports: inProgress,
+                        resolutionRate: BASELINE_RATE,
+                        averageResolutionHours: 18,
+                        cleanlinessScore: realTotal > 0 ? Math.round(((realResolved + (inProgress * 0.5)) / realTotal) * 100) : 96,
+                    },
+                    isLoading: false,
                 });
-                mappedReports = combined;
+            } catch (error) {
+                console.warn('Reports loading note:', error);
+                set({ isLoading: false });
+            } finally {
+                inFlightReportsPromise = null;
             }
+        };
 
-            // Calculate stats with baseline values for landing page
-            // Baseline: 500+ reports filed, 500+ issues resolved, 96% resolution rate
-            const BASELINE_REPORTS = 500;
-            const BASELINE_RESOLVED = 500;
-            const BASELINE_RATE = 96;
-
-            const realTotal = mappedReports.length;
-            const realResolved = mappedReports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
-            const pending = mappedReports.filter(r => r.status === 'submitted').length;
-            const inProgress = mappedReports.filter(r => ['under_review', 'assigned', 'in_progress'].includes(r.status)).length;
-
-            // Add real data to baseline for dynamic growth
-            const displayTotal = BASELINE_REPORTS + realTotal;
-            const displayResolved = BASELINE_RESOLVED + realResolved;
-            const displayRate = BASELINE_RATE; // Fixed at 96%
-
-            set({
-                reports: mappedReports,
-                cityStats: {
-                    totalReports: displayTotal,
-                    resolvedReports: displayResolved,
-                    pendingReports: pending,
-                    inProgressReports: inProgress,
-                    resolutionRate: displayRate,
-                    averageResolutionHours: 18,
-                    cleanlinessScore: realTotal > 0 ? Math.round(((realResolved + (inProgress * 0.5)) / realTotal) * 100) : 96,
-                },
-                isLoading: false
-            });
-        } catch (error) {
-            console.warn('Reports loading note:', error);
-            set({ isLoading: false });
-        }
+        inFlightReportsPromise = run();
+        return inFlightReportsPromise;
     },
 
     // Fetch user's reports (strictly isolated per signed-in user account)
     fetchUserReports: async () => {
-        const { user } = get();
-        set({ isLoading: true });
+        const targetUid = get().user?.id || null;
+        if (inFlightUserReports && inFlightUserReports.uid === targetUid) {
+            return inFlightUserReports.promise;
+        }
 
-        try {
-            const localCached = getLocalCachedReports(user?.id);
-            const localIds = getLocalReportIds(user?.id);
-            const reportsMap = new Map<string, Report>();
-
-            // Pre-seed map with ONLY this account's local cached reports (e.g., anonymous filings by this user)
-            localCached.forEach(r => reportsMap.set(r.id, r));
+        const run = async () => {
+            const { user } = get();
+            set({ isLoading: true });
 
             try {
-                const supabase = getSupabase();
-                let remoteReports: any[] = [];
+                const localCached = getLocalCachedReports(user?.id);
+                const localIds = getLocalReportIds(user?.id);
+                const reportsMap = new Map<string, Report>();
 
-                // 1. Fetch reports strictly belonging to this signed-in user
-                if (user && user.id) {
-                    const { data: userDbReports } = await supabase
-                        .from('reports')
-                        .select('*')
-                        .eq('user_id', user.id)
-                        .order('created_at', { ascending: false });
+                // Pre-seed map with ONLY this account's local cached reports (e.g., anonymous filings by this user)
+                localCached.forEach(r => reportsMap.set(r.id, r));
 
-                    if (userDbReports) {
-                        remoteReports = remoteReports.concat(userDbReports);
+                try {
+                    const supabase = getSupabase();
+                    const token = await getFastAccessToken(supabase);
+                    let remoteReports: any[] = [];
+                    let anyQueryError = false;
+
+                    // 1. Fetch reports strictly belonging to this signed-in user
+                    if (user && user.id) {
+                        const { data: userDbReports, error } = await restSelectWithRetry<any>(
+                            'reports',
+                            `select=*&user_id=eq.${encodeURIComponent(user.id)}&order=created_at.desc`,
+                            token,
+                            8000
+                        );
+                        if (error) {
+                            anyQueryError = true;
+                        } else if (userDbReports) {
+                            remoteReports = remoteReports.concat(userDbReports);
+                        }
                     }
+
+                    // 2. Fetch any anonymous/tracked reports explicitly saved under THIS account's key
+                    if (localIds.length > 0) {
+                        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                        const uuidIds = localIds.filter(id => uuidRegex.test(id));
+                        const codeIds = localIds.filter(id => !uuidRegex.test(id) && !id.startsWith('local-'));
+
+                        if (uuidIds.length > 0) {
+                            const { data: byIdReports, error } = await restSelect<any>(
+                                'reports',
+                                `select=*&id=in.(${uuidIds.map(id => encodeURIComponent(id)).join(',')})`,
+                                token,
+                                8000
+                            );
+                            if (error) anyQueryError = true;
+                            else if (byIdReports) remoteReports = remoteReports.concat(byIdReports);
+                        }
+
+                        if (codeIds.length > 0) {
+                            const { data: byCodeReports, error } = await restSelect<any>(
+                                'reports',
+                                `select=*&report_id=in.(${codeIds.map(id => encodeURIComponent(id)).join(',')})`,
+                                token,
+                                8000
+                            );
+                            if (error) anyQueryError = true;
+                            else if (byCodeReports) remoteReports = remoteReports.concat(byCodeReports);
+                        }
+                    }
+
+                    // Deduplicate remote reports AND enforce per-account isolation
+                    const uniqueRemote = Array.from(new Map(remoteReports.map(r => [r.id, r])).values())
+                        .filter((r: any) => !r.user_id || !user?.id || r.user_id === user.id);
+
+                    // Only prune stale cached IDs when remote queries succeeded cleanly (never wipe on transient error!)
+                    if (!anyQueryError) {
+                        const remoteIdsSet = new Set(uniqueRemote.map((r: any) => r.id));
+                        Array.from(reportsMap.keys()).forEach((cachedId) => {
+                            if (!cachedId.startsWith('local-') && !remoteIdsSet.has(cachedId)) {
+                                reportsMap.delete(cachedId);
+                            }
+                        });
+                    }
+
+                    if (uniqueRemote.length > 0) {
+                        const reportUuids = uniqueRemote.map(r => r.id).filter(Boolean);
+                        const imgRes = reportUuids.length > 0
+                            ? await restSelect<any>(
+                                'report_images',
+                                `select=*&report_id=in.(${reportUuids.map((id: string) => encodeURIComponent(id)).join(',')})`,
+                                token,
+                                8000
+                            )
+                            : { data: [] };
+
+                        uniqueRemote.forEach((r: any) => {
+                            const mapped = mapDbReport(r, imgRes.data, reportsMap.get(r.id)?.images);
+                            reportsMap.set(r.id, mapped);
+                            saveLocalCachedReport(mapped, user?.id);
+                        });
+                    }
+                } catch (networkErr) {
+                    console.warn('Network issue fetching remote user reports, using cached reports:', networkErr);
                 }
 
-                // 2. Fetch any anonymous/tracked reports explicitly saved under THIS account's key
-                if (localIds.length > 0) {
-                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                    const uuidIds = localIds.filter(id => uuidRegex.test(id));
-                    const codeIds = localIds.filter(id => !uuidRegex.test(id) && !id.startsWith('local-'));
+                const finalReports = Array.from(reportsMap.values())
+                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-                    if (uuidIds.length > 0) {
-                        const { data: byIdReports } = await supabase
-                            .from('reports')
-                            .select('*')
-                            .in('id', uuidIds);
-                        if (byIdReports) remoteReports = remoteReports.concat(byIdReports);
-                    }
-
-                    if (codeIds.length > 0) {
-                        const { data: byCodeReports } = await supabase
-                            .from('reports')
-                            .select('*')
-                            .in('report_id', codeIds);
-                        if (byCodeReports) remoteReports = remoteReports.concat(byCodeReports);
-                    }
+                set({ userReports: finalReports, isLoading: false });
+            } catch (error) {
+                console.error('Failed to fetch user reports:', error);
+                set({ isLoading: false });
+            } finally {
+                if (inFlightUserReports?.uid === targetUid) {
+                    inFlightUserReports = null;
                 }
-
-                // Deduplicate remote reports AND enforce per-account isolation:
-                // Reject any record explicitly owned by another user_id
-                const uniqueRemote = Array.from(new Map(remoteReports.map(r => [r.id, r])).values())
-                    .filter((r: any) => !r.user_id || !user?.id || r.user_id === user.id);
-
-                // Drop any stale cached IDs that were deleted or belong to another user
-                const remoteIdsSet = new Set(uniqueRemote.map((r: any) => r.id));
-                Array.from(reportsMap.keys()).forEach((cachedId) => {
-                    if (!cachedId.startsWith('local-') && !remoteIdsSet.has(cachedId)) {
-                        reportsMap.delete(cachedId);
-                    }
-                });
-
-                if (uniqueRemote.length > 0) {
-                    const reportUuids = uniqueRemote.map(r => r.id);
-                    const { data: imagesData } = await supabase
-                        .from('report_images')
-                        .select('*')
-                        .in('report_id', reportUuids);
-
-                    uniqueRemote.forEach((r: any) => {
-                        const reportImages = (imagesData || [])
-                            .filter((img: any) => img.report_id === r.id)
-                            .map((img: any) => ({
-                                id: img.id,
-                                url: img.url,
-                                thumbnailUrl: img.url,
-                                uploadedAt: img.created_at,
-                            }));
-
-                        const mapped: Report = {
-                            id: r.id,
-                            reportId: r.report_id || `R-${r.id.substring(0, 6).toUpperCase()}`,
-                            location: {
-                                latitude: r.latitude,
-                                longitude: r.longitude,
-                                address: r.address,
-                                locality: r.locality,
-                                city: r.city,
-                            },
-                            images: reportImages.length > 0 ? reportImages : (reportsMap.get(r.id)?.images || []),
-                            category: r.category,
-                            severity: r.severity,
-                            estimatedVolume: 'medium',
-                            description: r.description,
-                            isAnonymous: r.is_anonymous,
-                            status: r.status,
-                            pointsAwarded: Boolean(r.points_awarded),
-                            requiresReview: Boolean(r.requires_review),
-                            rejectionReason: r.rejection_reason || undefined,
-                            statusHistory: [{ status: r.status, timestamp: r.created_at }],
-                            assignedTo: r.assigned_department_name ? {
-                                departmentId: r.assigned_department_id || 'dept-1',
-                                departmentName: r.assigned_department_name,
-                                workerName: r.assigned_worker_name,
-                                assignedAt: r.updated_at || r.created_at,
-                            } : undefined,
-                            resolution: r.resolution_notes ? {
-                                beforeImages: [],
-                                afterImages: [],
-                                notes: r.resolution_notes,
-                                completedAt: r.resolved_at || r.updated_at,
-                                completedBy: r.assigned_worker_name || 'Municipal Team',
-                            } : undefined,
-                            createdAt: r.created_at,
-                            updatedAt: r.updated_at,
-                        };
-
-                        reportsMap.set(r.id, mapped);
-                        saveLocalCachedReport(mapped, user?.id);
-                    });
-                }
-            } catch (networkErr) {
-                console.warn('Network issue fetching remote user reports, using cached reports:', networkErr);
             }
+        };
 
-            const finalReports = Array.from(reportsMap.values())
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-            set({ userReports: finalReports, isLoading: false });
-        } catch (error) {
-            console.error('Failed to fetch user reports:', error);
-            set({ isLoading: false });
-        }
+        const promise = run();
+        inFlightUserReports = { uid: targetUid, promise };
+        return promise;
     },
 
     // Track a report by ID or Code
@@ -1069,50 +1248,25 @@ export const useAppStore = create<AppState>((set, get) => ({
             return inGlobal;
         }
 
-        // Query Supabase directly (avoid passing non-UUID values to uuid column)
+        // Query Supabase via direct REST (avoiding lock waits)
         try {
             const supabase = getSupabase();
+            const token = await getFastAccessToken(supabase);
             const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query);
-            const { data } = await (isUuid
-                ? supabase.from('reports').select('*').eq('id', query).maybeSingle()
-                : supabase.from('reports').select('*').ilike('report_id', query).maybeSingle());
+            const filter = isUuid
+                ? `select=*&id=eq.${encodeURIComponent(query)}&limit=1`
+                : `select=*&report_id=ilike.${encodeURIComponent(query)}&limit=1`;
+            const { data: rows } = await restSelectWithRetry<any>('reports', filter, token, 8000);
+            const reportRecord = rows?.[0];
 
-            if (data) {
-                const reportRecord = data as any;
-                const { data: imagesData } = await supabase
-                    .from('report_images')
-                    .select('*')
-                    .eq('report_id', reportRecord.id);
-
-                const mapped: Report = {
-                    id: reportRecord.id,
-                    reportId: reportRecord.report_id || `R-${reportRecord.id.substring(0, 6).toUpperCase()}`,
-                    location: {
-                        latitude: reportRecord.latitude,
-                        longitude: reportRecord.longitude,
-                        address: reportRecord.address,
-                        locality: reportRecord.locality,
-                        city: reportRecord.city,
-                    },
-                    images: (imagesData || []).map((img: any) => ({
-                        id: img.id,
-                        url: img.url,
-                        thumbnailUrl: img.url,
-                        uploadedAt: img.created_at,
-                    })),
-                    category: reportRecord.category,
-                    severity: reportRecord.severity,
-                    estimatedVolume: 'medium',
-                    description: reportRecord.description,
-                    isAnonymous: reportRecord.is_anonymous,
-                    status: reportRecord.status,
-                    pointsAwarded: Boolean(reportRecord.points_awarded),
-                    requiresReview: Boolean(reportRecord.requires_review),
-                    rejectionReason: reportRecord.rejection_reason || undefined,
-                    statusHistory: [{ status: reportRecord.status, timestamp: reportRecord.created_at }],
-                    createdAt: reportRecord.created_at,
-                    updatedAt: reportRecord.updated_at,
-                };
+            if (reportRecord) {
+                const imgRes = await restSelect<any>(
+                    'report_images',
+                    `select=*&report_id=eq.${encodeURIComponent(reportRecord.id)}`,
+                    token,
+                    6000
+                );
+                const mapped = mapDbReport(reportRecord, imgRes.data);
 
                 const uid = get().user?.id;
                 saveLocalReportId(mapped.id, uid);
@@ -1247,47 +1401,52 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
     },
 
-    // Refresh profile data from database (points, reports count)
+    // Refresh profile data cleanly via direct REST (points, reports count, trust score)
     refreshProfile: async () => {
         const { user } = get();
         if (!user) return;
 
         try {
             const supabase = getSupabase();
-
-            // Fetch latest profile data from database
-            // @ts-ignore - Supabase types not generated
-            const { data: profileData, error } = await (supabase
-                .from('profiles') as any)
-                .select('points, reports_submitted, reports_resolved, avatar_url, trust_score, false_reports_count')
-                .eq('id', user.id)
-                .single();
+            const token = await getFastAccessToken(supabase);
+            const { data: rows, error } = await restSelect<any>(
+                'profiles',
+                `select=first_name,last_name,points,reports_submitted,reports_resolved,avatar_url,trust_score,false_reports_count&id=eq.${encodeURIComponent(user.id)}&limit=1`,
+                token,
+                6000
+            );
 
             if (error) {
                 console.warn('Failed to fetch profile:', error);
                 return;
             }
 
+            const profileData = rows?.[0];
             if (profileData) {
                 const refreshedPoints = profileData.points || 0;
+                const latestUser = get().user;
+                if (!latestUser || latestUser.id !== user.id) return;
+
                 set({
                     user: {
-                        ...user,
+                        ...latestUser,
                         profile: {
-                            ...user.profile,
-                            avatar: profileData.avatar_url || user.profile?.avatar || '',
+                            ...latestUser.profile,
+                            firstName: profileData.first_name || latestUser.profile?.firstName || 'User',
+                            lastName: profileData.last_name ?? latestUser.profile?.lastName ?? '',
+                            avatar: profileData.avatar_url || latestUser.profile?.avatar || '',
                         },
                         engagement: {
-                            ...user.engagement,
+                            ...latestUser.engagement,
                             points: refreshedPoints,
                             totalReports: profileData.reports_submitted || 0,
                             resolvedReports: profileData.reports_resolved || 0,
-                            badges: user.engagement?.badges || [],
+                            badges: latestUser.engagement?.badges || [],
                             rank: getCitizenRank(refreshedPoints),
                             trustScore: profileData.trust_score ?? 100,
                             falseReportsCount: profileData.false_reports_count ?? 0,
-                        }
-                    }
+                        },
+                    },
                 });
             }
         } catch (error) {

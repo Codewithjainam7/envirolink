@@ -58,12 +58,21 @@ export default function LoginPage() {
         return next && next.startsWith('/') && !next.startsWith('//') ? next : '/report';
     };
 
-    // Check if already logged in
+    // Check if already logged in cleanly without blocking render
     useEffect(() => {
         const checkSession = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                router.push(getNextPath());
+            try {
+                const res = await Promise.race([
+                    supabase.auth.getSession(),
+                    new Promise<{ data: { session: null } }>((resolve) =>
+                        setTimeout(() => resolve({ data: { session: null } }), 2500)
+                    ),
+                ]);
+                if (res?.data?.session) {
+                    router.push(getNextPath());
+                }
+            } catch {
+                // Stay on login page cleanly
             }
         };
         checkSession();

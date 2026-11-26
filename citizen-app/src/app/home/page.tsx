@@ -103,13 +103,21 @@ export default function HomePage() {
         // Initialize auth and fetch data on mount
         initializeAuth();
         fetchReports();
-        fetchUserReports();
 
-        // Boot animation for 2.5 seconds
-        const bootTimer = setTimeout(() => {
+        // Only play boot overlay once per session so switching back to /home is instant
+        if (typeof window !== 'undefined' && sessionStorage.getItem('hasHomeBooted')) {
             setIsBooting(false);
             setMounted(true);
-        }, 2500);
+            return;
+        }
+
+        const bootTimer = setTimeout(() => {
+            if (typeof window !== 'undefined') {
+                sessionStorage.setItem('hasHomeBooted', 'true');
+            }
+            setIsBooting(false);
+            setMounted(true);
+        }, 1200);
 
         return () => clearTimeout(bootTimer);
     }, []);

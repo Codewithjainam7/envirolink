@@ -43,21 +43,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    // Initialize auth state
+    // Initialize auth state (bounded by timeout so it never blocks app hydration)
     useEffect(() => {
+        let active = true;
         const initAuth = async () => {
             try {
-                const { data: { session } } = await supabase.auth.getSession();
+                const sessionResult = await Promise.race([
+                    supabase.auth.getSession(),
+                    new Promise<{ data: { session: null } }>((resolve) =>
+                        setTimeout(() => resolve({ data: { session: null } }), 3000)
+                    ),
+                ]);
+                const session = sessionResult?.data?.session ?? null;
+                if (!active) return;
                 setSession(session);
                 setUser(session?.user ?? null);
 
                 if (session?.user) {
-                    await fetchProfile(session.user.id);
+                    fetchProfile(session.user.id).catch(() => {});
                 }
             } catch (error) {
                 console.error('Auth init error:', error);
             } finally {
-                setIsLoading(false);
+                if (active) setIsLoading(false);
             }
         };
 
@@ -65,19 +73,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Listen for auth changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            async (event, session) => {
+            async (_event, session) => {
+                if (!active) return;
                 setSession(session);
                 setUser(session?.user ?? null);
 
                 if (session?.user) {
-                    await fetchProfile(session.user.id);
+                    fetchProfile(session.user.id).catch(() => {});
                 } else {
                     setProfile(null);
                 }
             }
         );
 
-        return () => subscription.unsubscribe();
+        return () => {
+            active = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     // Sign up

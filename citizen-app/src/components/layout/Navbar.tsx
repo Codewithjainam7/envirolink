@@ -25,11 +25,10 @@ export default function Navbar() {
     const [showTranslate, setShowTranslate] = useState(false);
     const { user, isAuthenticated, initializeAuth, userReports, fetchUserReports } = useAppStore();
 
-    // Initialize auth on mount
+    // Initialize auth cleanly on mount (processSession fetches userReports once hydrated)
     useEffect(() => {
         initializeAuth();
-        fetchUserReports();
-    }, [initializeAuth, fetchUserReports]);
+    }, [initializeAuth]);
 
     const languages = [
         { code: 'en', name: 'English' },

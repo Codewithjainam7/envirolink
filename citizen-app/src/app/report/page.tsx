@@ -627,23 +627,34 @@ export default function ReportPage() {
                 <AnimatePresence mode="wait">
                     <motion.div key={currentStep} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3, ease: "easeOut" }}>
 
-                        {/* Step 0: Photos (Live GeoTag Camera Only) */}
+                        {/* Step 0: Photos */}
                         {currentStep === 0 && (
                             <div className="bg-white rounded-2xl sm:rounded-3xl border border-gray-200 p-4 sm:p-6 shadow-sm">
-                                <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-1 sm:mb-2">Capture Live GeoTag Photo</h2>
+                                <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-1 sm:mb-2">Capture GeoTagged Photos</h2>
                                 <p className="text-gray-500 text-sm mb-5">
-                                    Live GeoTag Camera capture only — gallery uploads are disabled to prevent tampering and guarantee on-spot GPS proof.
+                                    Open live GeoTag Camera or upload photos (GPS stamp is burned directly onto each photo)
                                 </p>
 
-                                <button
-                                    type="button"
-                                    onClick={() => setShowGeoCamera(true)}
-                                    disabled={isAnalyzing || images.length >= 5}
-                                    className="w-full py-5 px-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-base shadow-lg shadow-emerald-500/25 hover:from-emerald-700 hover:to-emerald-600 transition flex items-center justify-center gap-3 disabled:opacity-50 mb-4"
-                                >
-                                    <Camera size={22} />
-                                    {images.length === 0 ? 'Open GeoTag Camera' : `Capture Another Photo (${images.length}/5)`}
-                                </button>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowGeoCamera(true)}
+                                        disabled={isAnalyzing || images.length >= 5}
+                                        className="py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/25 hover:from-emerald-700 hover:to-emerald-600 transition flex items-center justify-center gap-2.5 disabled:opacity-50"
+                                    >
+                                        <Camera size={20} />
+                                        {images.length === 0 ? 'Open GeoTag Camera' : `GeoTag Camera (${images.length}/5)`}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={isAnalyzing || images.length >= 5}
+                                        className="py-4 px-4 rounded-2xl border-2 border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/70 text-emerald-800 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-50"
+                                    >
+                                        <Upload size={19} />
+                                        Upload Photo / Gallery
+                                    </button>
+                                </div>
 
                                 {imagePreviews.length > 0 && (
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
@@ -661,6 +672,7 @@ export default function ReportPage() {
                                         ))}
                                     </div>
                                 )}
+                                <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" suppressHydrationWarning />
 
                                 {isAnalyzing && (
                                     <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-3 rounded-xl">
@@ -1213,6 +1225,7 @@ export default function ReportPage() {
                 onClose={() => setShowGeoCamera(false)}
                 location={location}
                 onCapture={handleGeoCameraCapture}
+                onFallbackGallery={() => fileInputRef.current?.click()}
             />
         </div>
     );

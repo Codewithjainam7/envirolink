@@ -11,6 +11,7 @@ interface WorkerGeoTagCameraModalProps {
     address: string;
     workerCoords: { lat: number; lng: number; distanceMeters: number } | null;
     onCapture: (payload: { rawDataUrl: string; stampedDataUrl: string }) => void;
+    onFallbackGallery: () => void;
 }
 
 export default function GeoTagCameraModal({
@@ -20,6 +21,7 @@ export default function GeoTagCameraModal({
     address,
     workerCoords,
     onCapture,
+    onFallbackGallery,
 }: WorkerGeoTagCameraModalProps) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -210,17 +212,27 @@ export default function GeoTagCameraModal({
                             <Camera size={28} className="text-emerald-400" />
                         </div>
                         <p className="text-sm text-gray-200">{cameraError}</p>
-                        <p className="text-xs text-gray-400">
-                            Gallery uploads are disabled for anti-tampering. Allow camera access and tap Retry.
-                        </p>
-                        <button
-                            type="button"
-                            onClick={() => startCamera(facingMode)}
-                            className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm flex items-center justify-center gap-2"
-                        >
-                            <RefreshCw size={16} />
-                            Retry Live Camera
-                        </button>
+                        <div className="space-y-2.5">
+                            <button
+                                type="button"
+                                onClick={() => startCamera(facingMode)}
+                                className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm flex items-center justify-center gap-2"
+                            >
+                                <RefreshCw size={16} />
+                                Retry Live Camera
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onClose();
+                                    onFallbackGallery();
+                                }}
+                                className="w-full py-3 px-4 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-sm flex items-center justify-center gap-2"
+                            >
+                                <Upload size={16} />
+                                Upload Photo / Gallery
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <>

@@ -881,7 +881,7 @@ export default function WorkerDashboard() {
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       <button
                         type="button"
                         onClick={() => setShowWorkerCamera(true)}
@@ -892,11 +892,23 @@ export default function WorkerDashboard() {
                         }`}
                       >
                         <Camera size={18} />
-                        Open GeoTag Camera (Live Capture Only)
+                        Open GeoTag Camera
                       </button>
-                      <p className="text-[11px] text-gray-400">
-                        Gallery uploads disabled to prevent fake or pre-saved photos.
-                      </p>
+                      <button
+                        type="button"
+                        onClick={() => proofInputRef.current?.click()}
+                        className="w-full py-2.5 px-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                      >
+                        <Upload size={15} />
+                        Or Upload Photo / Gallery
+                      </button>
+                      <input
+                        ref={proofInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProofUpload}
+                        className="hidden"
+                      />
                     </div>
                   )}
                 </div>
@@ -954,6 +966,7 @@ export default function WorkerDashboard() {
             setRawProofImage(rawDataUrl);
             setProofImage(stampedDataUrl);
           }}
+          onFallbackGallery={() => proofInputRef.current?.click()}
         />
       )}
     </div>

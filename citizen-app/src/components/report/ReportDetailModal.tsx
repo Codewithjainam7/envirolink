@@ -257,13 +257,24 @@ export default function ReportDetailModal({ report, onClose, onDelete }: ReportD
                                         <div
                                             key={img.id || i}
                                             onClick={() => setSelectedImage(img.url)}
-                                            className="relative aspect-video rounded-xl overflow-hidden border border-gray-200 group cursor-pointer bg-gray-100 hover:shadow-md transition-all"
+                                            className="relative aspect-video rounded-xl overflow-hidden border border-gray-200 group cursor-pointer bg-emerald-50 hover:shadow-md transition-all"
                                         >
                                             <img
                                                 src={img.url}
                                                 alt={`Report photo ${i + 1}`}
+                                                loading="eager"
+                                                decoding="async"
+                                                onError={(e) => {
+                                                    const el = e.currentTarget;
+                                                    el.style.display = 'none';
+                                                    const fallback = el.nextElementSibling as HTMLElement | null;
+                                                    if (fallback) fallback.style.display = 'flex';
+                                                }}
                                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                             />
+                                            <div className="hidden w-full h-full items-center justify-center text-xs text-gray-500 font-medium px-2 text-center">
+                                                Tap to view evidence
+                                            </div>
                                             <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-medium">
                                                 Click to enlarge
                                             </div>

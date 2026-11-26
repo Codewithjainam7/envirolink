@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Sprout, Award, Gift, Sparkles, CheckCircle2, ShieldCheck, Copy, Check,
-    ArrowRight, Leaf, ShoppingBag, Ticket, X, Trophy, Layers, Scissors
+    ArrowRight, Leaf, ShoppingBag, Ticket, X, Trophy, Layers
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAppStore } from '@/store';
@@ -24,6 +24,7 @@ interface ClaimedPerkRecord {
     title: string;
     brand: string;
     partnerLogo: string;
+    image: string;
     pointsCost: number;
     voucherCode: string;
     claimedAt: string;
@@ -31,18 +32,11 @@ interface ClaimedPerkRecord {
 
 const CLAIMED_PERKS_STORAGE_KEY = 'envirolink_greenperks_claims_v1';
 
-const CONFETTI_PARTICLES = Array.from({ length: 14 }, (_, idx) => {
-    const angle = (idx / 14) * Math.PI * 2;
-    const distance = 90 + (idx % 3) * 32;
-    return {
-        id: idx,
-        x: Math.cos(angle) * distance,
-        y: Math.sin(angle) * distance - 12,
-        rotate: (idx % 2 === 0 ? 1 : -1) * (120 + idx * 18),
-        color: ['#10b981', '#059669', '#34d399', '#f59e0b', '#14b8a6'][idx % 5],
-        size: idx % 3 === 0 ? 9 : 7,
-    };
-});
+const MINTING_STEPS = [
+    'Validating GreenPerks PTS wallet',
+    'Locking showcase partner allocation',
+    'Issuing digital Eco-Voucher pass',
+];
 
 export default function GreenPerksPage() {
     const { user, isAuthenticated, initializeAuth } = useAppStore();
@@ -54,6 +48,7 @@ export default function GreenPerksPage() {
     const [selectedPerk, setSelectedPerk] = useState<GreenPerkItem | null>(null);
     const [isConfirmingRedeem, setIsConfirmingRedeem] = useState(false);
     const [isMintingVoucher, setIsMintingVoucher] = useState(false);
+    const [mintStep, setMintStep] = useState(0);
     const [claimedPerks, setClaimedPerks] = useState<ClaimedPerkRecord[]>([]);
     const [justClaimedRecord, setJustClaimedRecord] = useState<ClaimedPerkRecord | null>(null);
     const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -91,7 +86,7 @@ export default function GreenPerksPage() {
 
         const perkToClaim = selectedPerk;
         setIsConfirmingRedeem(true);
-        await new Promise((resolve) => setTimeout(resolve, 420));
+        await new Promise((resolve) => setTimeout(resolve, 260));
 
         const prefix = perkToClaim.brand.split(' ')[0].toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4) || 'ECO';
         const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -101,6 +96,7 @@ export default function GreenPerksPage() {
             title: perkToClaim.title,
             brand: perkToClaim.brand,
             partnerLogo: perkToClaim.partnerLogo,
+            image: perkToClaim.image,
             pointsCost: perkToClaim.pointsCost,
             voucherCode: `ELGP-${prefix}-${suffix}`,
             claimedAt: new Date().toISOString(),
@@ -116,12 +112,17 @@ export default function GreenPerksPage() {
         setIsConfirmingRedeem(false);
         setSelectedPerk(null);
 
-        // Animated 2-stage voucher generation celebration
+        // Smooth Apple-Wallet-style 3-step generation (no clunky spin icons)
         setJustClaimedRecord(record);
+        setMintStep(0);
         setIsMintingVoucher(true);
-        await new Promise((resolve) => setTimeout(resolve, 820));
+        await new Promise((resolve) => setTimeout(resolve, 340));
+        setMintStep(1);
+        await new Promise((resolve) => setTimeout(resolve, 340));
+        setMintStep(2);
+        await new Promise((resolve) => setTimeout(resolve, 360));
         setIsMintingVoucher(false);
-        toast.success('GreenPerk voucher unlocked!');
+        toast.success('GreenPerk Eco-Pass unlocked!');
     };
 
     const handleCopyCode = async (code: string) => {
@@ -136,7 +137,7 @@ export default function GreenPerksPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-emerald-50/50 via-white to-gray-50 relative pb-24">
+        <div className="min-h-screen font-sans bg-gradient-to-br from-emerald-50/50 via-white to-gray-50 relative pb-24">
             <FloatingBlobs />
 
             {/* Sunlit Glass Header & Citizen Wallet matching EnviroLink theme */}
@@ -301,7 +302,7 @@ export default function GreenPerksPage() {
                                         <img
                                             src={perk.image}
                                             alt={perk.title}
-                                            className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                                            className="w-full h-full object-cover hover:scale-105 transition-transform duration-500 block"
                                         />
                                         <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                                             <span className="px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-sm text-[11px] font-bold text-gray-800 shadow-sm">
@@ -529,49 +530,42 @@ export default function GreenPerksPage() {
                 </section>
             </div>
 
-            {/* Animated Reward Redemption Dialog Box */}
+            {/* Animated Reward Confirmation Dialog Box (always renders reliable product image + Nunito fonts) */}
             <AnimatePresence>
                 {selectedPerk && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        transition={{ duration: 0.22 }}
-                        className="fixed inset-0 z-50 bg-gray-900/45 backdrop-blur-md flex items-center justify-center p-4"
+                        transition={{ duration: 0.2 }}
+                        className="fixed inset-0 z-50 bg-gray-900/45 backdrop-blur-md flex items-center justify-center p-4 font-sans"
                         onClick={() => !isConfirmingRedeem && setSelectedPerk(null)}
                     >
                         <motion.div
-                            initial={{ opacity: 0, scale: 0.88, y: 26 }}
+                            initial={{ opacity: 0, scale: 0.92, y: 20 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.92, y: 18 }}
-                            transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+                            exit={{ opacity: 0, scale: 0.94, y: 14 }}
+                            transition={{ type: 'spring', stiffness: 360, damping: 28 }}
                             className="bg-white rounded-3xl shadow-2xl border-2 border-emerald-100 max-w-md w-full overflow-hidden relative"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            {/* Hero Preview with animated shimmer sweep */}
-                            <div className="relative h-52 bg-emerald-50 overflow-hidden">
-                                <motion.img
-                                    initial={{ scale: 1.08 }}
-                                    animate={{ scale: 1 }}
-                                    transition={{ duration: 0.5, ease: 'easeOut' }}
+                            {/* Crisp Explicit-Height Product Preview (guaranteed visible image) */}
+                            <div className="relative w-full h-56 bg-emerald-50 overflow-hidden">
+                                <img
                                     src={selectedPerk.image}
                                     alt={selectedPerk.title}
-                                    className="w-full h-full object-cover"
+                                    loading="eager"
+                                    decoding="sync"
+                                    className="w-full h-full object-cover block"
                                 />
-                                <motion.div
-                                    initial={{ x: '-120%' }}
-                                    animate={{ x: '160%' }}
-                                    transition={{ duration: 1.4, delay: 0.15, ease: 'easeInOut' }}
-                                    className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/35 to-transparent skew-x-[-20deg] pointer-events-none"
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent pointer-events-none" />
 
                                 {/* Partner Logo Pill */}
                                 <motion.div
                                     initial={{ opacity: 0, y: 8 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: 0.12 }}
-                                    className="absolute bottom-3 left-4 h-9 px-3 rounded-xl bg-white/95 backdrop-blur-md border border-white shadow-md flex items-center gap-2"
+                                    transition={{ delay: 0.08 }}
+                                    className="absolute bottom-3 left-4 h-9 px-3 rounded-xl bg-white/95 backdrop-blur-md border border-white shadow-md flex items-center gap-2 z-10"
                                 >
                                     <img
                                         src={selectedPerk.partnerLogo}
@@ -584,53 +578,41 @@ export default function GreenPerksPage() {
                                 </motion.div>
 
                                 <motion.button
-                                    whileHover={{ scale: 1.08, rotate: 90 }}
+                                    whileHover={{ scale: 1.08 }}
                                     whileTap={{ scale: 0.92 }}
                                     type="button"
                                     onClick={() => !isConfirmingRedeem && setSelectedPerk(null)}
-                                    className="absolute top-3.5 right-3.5 p-2 rounded-full bg-white/95 text-gray-700 hover:bg-white shadow-md transition-colors"
+                                    className="absolute top-3.5 right-3.5 p-2 rounded-full bg-white/95 text-gray-700 hover:bg-white shadow-md transition-colors z-10"
                                 >
                                     <X size={18} />
                                 </motion.button>
                             </div>
 
                             <div className="p-6 space-y-5">
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: 0.08 }}
-                                >
+                                <div>
                                     <p className="text-xs font-bold text-emerald-700">{selectedPerk.brand}</p>
                                     <h3 className="text-xl font-extrabold text-gray-900 mt-0.5">{selectedPerk.title}</h3>
                                     <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">{selectedPerk.description}</p>
-                                </motion.div>
+                                </div>
 
                                 {/* Animated Balance Deduction Meter */}
                                 {(() => {
                                     const canAfford = effectiveBalance >= selectedPerk.pointsCost;
                                     const remaining = Math.max(0, effectiveBalance - selectedPerk.pointsCost);
-                                    const afterPct = effectiveBalance > 0
-                                        ? Math.max(0, Math.round((remaining / Math.max(effectiveBalance, selectedPerk.pointsCost)) * 100))
-                                        : 0;
-                                    const currentPct = effectiveBalance > 0
-                                        ? Math.min(100, Math.round((effectiveBalance / Math.max(effectiveBalance, selectedPerk.pointsCost)) * 100))
-                                        : 0;
+                                    const maxScale = Math.max(effectiveBalance, selectedPerk.pointsCost, 1);
+                                    const afterPct = canAfford ? Math.round((remaining / maxScale) * 100) : Math.round((effectiveBalance / maxScale) * 100);
+                                    const currentPct = Math.round((effectiveBalance / maxScale) * 100);
 
                                     return (
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ delay: 0.14 }}
-                                            className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 space-y-3"
-                                        >
+                                        <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 space-y-3">
                                             <div className="flex items-center justify-between text-sm">
                                                 <div>
-                                                    <p className="text-xs text-gray-500 font-medium">Current Wallet</p>
+                                                    <p className="text-xs text-gray-500 font-semibold">Current Wallet</p>
                                                     <p className="text-base font-extrabold text-gray-900">{effectiveBalance} PTS</p>
                                                 </div>
                                                 <ArrowRight size={18} className="text-emerald-500" />
                                                 <div className="text-right">
-                                                    <p className="text-xs text-gray-500 font-medium">
+                                                    <p className="text-xs text-gray-500 font-semibold">
                                                         {canAfford ? 'Balance After' : 'Points Short'}
                                                     </p>
                                                     <p className={`text-base font-extrabold ${canAfford ? 'text-emerald-700' : 'text-amber-600'}`}>
@@ -641,12 +623,12 @@ export default function GreenPerksPage() {
                                             <div className="h-2.5 w-full bg-white rounded-full overflow-hidden border border-emerald-100">
                                                 <motion.div
                                                     initial={{ width: `${currentPct}%` }}
-                                                    animate={{ width: canAfford ? `${afterPct}%` : `${currentPct}%` }}
-                                                    transition={{ duration: 0.7, delay: 0.25, ease: [0.165, 0.84, 0.44, 1] }}
+                                                    animate={{ width: `${afterPct}%` }}
+                                                    transition={{ duration: 0.65, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
                                                     className={`h-full rounded-full ${canAfford ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' : 'bg-amber-400'}`}
                                                 />
                                             </div>
-                                        </motion.div>
+                                        </div>
                                     );
                                 })()}
 
@@ -661,34 +643,20 @@ export default function GreenPerksPage() {
                                         type="button"
                                         disabled={isConfirmingRedeem}
                                         onClick={() => setSelectedPerk(null)}
-                                        className="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm transition-colors disabled:opacity-50"
+                                        className="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition-colors disabled:opacity-50"
                                     >
                                         Cancel
                                     </button>
                                     <motion.button
-                                        whileHover={{ scale: 1.02 }}
-                                        whileTap={{ scale: 0.96 }}
+                                        whileHover={{ scale: 1.015 }}
+                                        whileTap={{ scale: 0.97 }}
                                         type="button"
                                         disabled={effectiveBalance < selectedPerk.pointsCost || isConfirmingRedeem}
                                         onClick={handleRedeemConfirm}
-                                        className="flex-[1.3] py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold text-sm transition-all disabled:opacity-50 shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2"
+                                        className="flex-[1.35] py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold text-sm transition-all disabled:opacity-50 shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2"
                                     >
-                                        {isConfirmingRedeem ? (
-                                            <>
-                                                <motion.span
-                                                    animate={{ rotate: 360 }}
-                                                    transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
-                                                >
-                                                    <Sparkles size={16} />
-                                                </motion.span>
-                                                Unlocking...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Gift size={16} />
-                                                Confirm Redeem
-                                            </>
-                                        )}
+                                        <Gift size={16} />
+                                        {isConfirmingRedeem ? 'Preparing Pass...' : 'Confirm Redeem'}
                                     </motion.button>
                                 </div>
                             </div>
@@ -697,175 +665,193 @@ export default function GreenPerksPage() {
                 )}
             </AnimatePresence>
 
-            {/* Amazing 2-Stage Animated Eco-Voucher Generation Modal */}
+            {/* Clean Apple-Wallet Style Eco-Voucher Minting & Digital Pass Modal */}
             <AnimatePresence>
                 {justClaimedRecord && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-md flex items-center justify-center p-4"
+                        className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-md flex items-center justify-center p-4 font-sans"
                         onClick={() => !isMintingVoucher && setJustClaimedRecord(null)}
                     >
                         <motion.div
-                            initial={{ scale: 0.86, opacity: 0, y: 24 }}
+                            initial={{ scale: 0.92, opacity: 0, y: 20 }}
                             animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.9, opacity: 0, y: 16 }}
-                            transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+                            exit={{ scale: 0.94, opacity: 0, y: 14 }}
+                            transition={{ type: 'spring', stiffness: 360, damping: 28 }}
                             className="relative max-w-md w-full"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            {isMintingVoucher ? (
-                                <motion.div
-                                    key="minting"
-                                    initial={{ opacity: 0, scale: 0.92 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 1.04 }}
-                                    className="bg-white rounded-3xl shadow-2xl border-2 border-emerald-200 p-8 text-center space-y-5 overflow-hidden relative"
-                                >
-                                    <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
-                                        <motion.div
-                                            animate={{ scale: [1, 1.55, 1.9], opacity: [0.65, 0.25, 0] }}
-                                            transition={{ duration: 1.1, repeat: Infinity, ease: 'easeOut' }}
-                                            className="absolute inset-0 rounded-full border-2 border-emerald-400"
-                                        />
-                                        <motion.div
-                                            animate={{ scale: [1, 1.35], opacity: [0.8, 0] }}
-                                            transition={{ duration: 0.9, delay: 0.2, repeat: Infinity, ease: 'easeOut' }}
-                                            className="absolute inset-2 rounded-full bg-emerald-200/60"
-                                        />
-                                        <motion.div
-                                            animate={{ rotate: 360 }}
-                                            transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-                                            className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 relative z-10"
-                                        >
-                                            <Sprout size={32} />
-                                        </motion.div>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs font-extrabold uppercase tracking-widest text-emerald-600">
-                                            EnviroLink GreenPerks
-                                        </p>
-                                        <h3 className="text-xl font-extrabold text-gray-900 mt-1">
-                                            Generating Verified Voucher...
-                                        </h3>
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            Applying {justClaimedRecord.pointsCost} PTS &amp; sealing partner discount code
-                                        </p>
-                                    </div>
-                                    <div className="h-2 w-48 mx-auto bg-emerald-100 rounded-full overflow-hidden">
-                                        <motion.div
-                                            initial={{ width: '0%' }}
-                                            animate={{ width: '100%' }}
-                                            transition={{ duration: 0.78, ease: 'easeInOut' }}
-                                            className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full"
-                                        />
-                                    </div>
-                                </motion.div>
-                            ) : (
-                                <div className="relative">
-                                    {/* Celebratory Confetti / Leaf Sparkle Burst */}
-                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-                                        {CONFETTI_PARTICLES.map((p) => (
-                                            <motion.span
-                                                key={p.id}
-                                                initial={{ opacity: 0, scale: 0, x: 0, y: 0, rotate: 0 }}
-                                                animate={{
-                                                    opacity: [0, 1, 1, 0],
-                                                    scale: [0.3, 1.2, 0.9, 0.4],
-                                                    x: p.x,
-                                                    y: p.y,
-                                                    rotate: p.rotate,
-                                                }}
-                                                transition={{ duration: 1.1, ease: [0.165, 0.84, 0.44, 1] }}
-                                                style={{ backgroundColor: p.color, width: p.size, height: p.size }}
-                                                className="absolute rounded-full shadow-sm"
-                                            />
-                                        ))}
-                                    </div>
-
-                                    {/* Perforated Eco-Voucher Ticket Card */}
+                            <AnimatePresence mode="wait">
+                                {isMintingVoucher ? (
                                     <motion.div
-                                        key="revealed"
-                                        initial={{ opacity: 0, scale: 0.82, y: 20 }}
-                                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                                        transition={{ type: 'spring', stiffness: 340, damping: 22 }}
-                                        className="bg-white rounded-3xl shadow-2xl border-2 border-emerald-200 overflow-hidden relative z-10"
+                                        key="minting-step"
+                                        initial={{ opacity: 0, scale: 0.96 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, y: -12, scale: 0.98 }}
+                                        transition={{ duration: 0.24 }}
+                                        className="bg-white rounded-3xl shadow-2xl border-2 border-emerald-200 p-6 sm:p-7 space-y-5 overflow-hidden relative"
                                     >
-                                        {/* Top Ticket Band */}
-                                        <div className="bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-600 px-6 py-5 text-white relative overflow-hidden">
+                                        {/* Preview strip: actual product thumbnail + partner logo */}
+                                        <div className="flex items-center gap-3.5 bg-emerald-50/70 border border-emerald-100 rounded-2xl p-3">
+                                            <img
+                                                src={justClaimedRecord.image}
+                                                alt={justClaimedRecord.title}
+                                                className="w-14 h-14 rounded-xl object-cover shrink-0 border border-emerald-200"
+                                            />
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                                                    EnviroLink GreenPerks
+                                                </p>
+                                                <h3 className="text-base font-extrabold text-gray-900 truncate">
+                                                    {justClaimedRecord.title}
+                                                </h3>
+                                                <p className="text-xs text-gray-500 font-medium truncate">
+                                                    {justClaimedRecord.brand}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Smooth 3-Step Horizontal Checklist + Shimmer Progress Bar */}
+                                        <div className="space-y-3">
+                                            {MINTING_STEPS.map((label, idx) => {
+                                                const done = mintStep > idx;
+                                                const current = mintStep === idx;
+                                                return (
+                                                    <motion.div
+                                                        key={label}
+                                                        initial={{ opacity: 0, x: -8 }}
+                                                        animate={{ opacity: 1, x: 0 }}
+                                                        transition={{ delay: idx * 0.08 }}
+                                                        className={`flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl border transition-colors ${
+                                                            done
+                                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                                                                : current
+                                                                ? 'bg-white border-emerald-300 shadow-xs text-gray-900'
+                                                                : 'bg-gray-50/60 border-gray-100 text-gray-400'
+                                                        }`}
+                                                    >
+                                                        <span className="text-xs sm:text-sm font-bold">{label}</span>
+                                                        {done ? (
+                                                            <motion.span
+                                                                initial={{ scale: 0.6, opacity: 0 }}
+                                                                animate={{ scale: 1, opacity: 1 }}
+                                                                className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0"
+                                                            >
+                                                                <Check size={12} strokeWidth={3} />
+                                                            </motion.span>
+                                                        ) : current ? (
+                                                            <motion.span
+                                                                animate={{ scale: [1, 1.3, 1], opacity: [0.5, 1, 0.5] }}
+                                                                transition={{ duration: 0.9, repeat: Infinity }}
+                                                                className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"
+                                                            />
+                                                        ) : (
+                                                            <span className="w-2 h-2 rounded-full bg-gray-300 shrink-0" />
+                                                        )}
+                                                    </motion.div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Smooth linear shimmer bar */}
+                                        <div className="h-2 w-full bg-emerald-100 rounded-full overflow-hidden">
                                             <motion.div
-                                                initial={{ x: '-100%' }}
-                                                animate={{ x: '200%' }}
-                                                transition={{ duration: 1.8, repeat: Infinity, repeatDelay: 2.2, ease: 'easeInOut' }}
-                                                className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/25 to-transparent skew-x-[-20deg] pointer-events-none"
+                                                initial={{ width: '12%' }}
+                                                animate={{ width: mintStep === 0 ? '35%' : mintStep === 1 ? '72%' : '100%' }}
+                                                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                                                className="h-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500 rounded-full"
+                                            />
+                                        </div>
+                                    </motion.div>
+                                ) : (
+                                    <motion.div
+                                        key="revealed-pass"
+                                        initial={{ opacity: 0, y: 18, scale: 0.94 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+                                        className="bg-white rounded-3xl shadow-2xl border-2 border-emerald-200 overflow-hidden relative"
+                                    >
+                                        {/* Top Brand & Impact Header with Subtle Single Sheen Sweep */}
+                                        <div className="bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-600 px-6 py-4 text-white relative overflow-hidden">
+                                            <motion.div
+                                                initial={{ x: '-120%' }}
+                                                animate={{ x: '220%' }}
+                                                transition={{ duration: 1.1, ease: 'easeInOut' }}
+                                                className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/25 to-transparent skew-x-[-18deg] pointer-events-none"
                                             />
                                             <div className="flex items-center justify-between gap-3 relative z-10">
                                                 <div className="flex items-center gap-2.5">
-                                                    <motion.div
-                                                        initial={{ scale: 0, rotate: -90 }}
-                                                        animate={{ scale: 1, rotate: 0 }}
-                                                        transition={{ type: 'spring', stiffness: 420, damping: 18, delay: 0.1 }}
-                                                        className="w-10 h-10 rounded-xl bg-white text-emerald-600 flex items-center justify-center shadow"
-                                                    >
-                                                        <CheckCircle2 size={22} />
-                                                    </motion.div>
+                                                    <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                                        <CheckCircle2 size={20} className="text-white" />
+                                                    </div>
                                                     <div>
                                                         <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-100">
                                                             Eco-Voucher Unlocked
                                                         </p>
-                                                        <p className="font-extrabold text-base leading-tight">
+                                                        <p className="font-extrabold text-sm">
                                                             -{justClaimedRecord.pointsCost} PTS Redeemed
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <div className="h-9 px-2.5 rounded-xl bg-white shadow-sm flex items-center justify-center shrink-0">
+                                                <div className="h-9 px-3 rounded-xl bg-white shadow-sm flex items-center justify-center shrink-0">
                                                     <img
                                                         src={justClaimedRecord.partnerLogo}
                                                         alt={justClaimedRecord.brand}
-                                                        className="h-5 w-auto max-w-[68px] object-contain"
+                                                        className="h-5 w-auto max-w-[72px] object-contain"
                                                     />
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Ticket Stub Details */}
-                                        <div className="p-6 text-center space-y-4">
-                                            <div>
-                                                <h3 className="text-xl font-extrabold text-gray-900">{justClaimedRecord.title}</h3>
-                                                <p className="text-xs font-semibold text-emerald-700 mt-1">{justClaimedRecord.brand}</p>
-                                            </div>
-
-                                            {/* Perforated Ticket Cutout Line */}
-                                            <div className="relative py-2 flex items-center justify-center">
-                                                <div className="w-5 h-5 rounded-full bg-gray-900/50 -ml-9 shrink-0" />
-                                                <div className="flex-1 border-t-2 border-dashed border-emerald-200 mx-2 flex items-center justify-center">
-                                                    <Scissors size={14} className="text-emerald-400 bg-white px-1 -mt-0.5" />
-                                                </div>
-                                                <div className="w-5 h-5 rounded-full bg-gray-900/50 -mr-9 shrink-0" />
-                                            </div>
-
-                                            {/* Glowing Shimmer Voucher Code Box */}
+                                        {/* Crisp Product Strip inside Pass */}
+                                        <div className="p-6 space-y-5">
                                             <motion.div
-                                                initial={{ scale: 0.94, opacity: 0 }}
-                                                animate={{ scale: 1, opacity: 1 }}
-                                                transition={{ delay: 0.16, type: 'spring', stiffness: 300, damping: 22 }}
-                                                className="bg-emerald-50/80 border-2 border-emerald-300 rounded-2xl p-4 flex items-center justify-between gap-2 shadow-inner relative overflow-hidden"
+                                                initial={{ opacity: 0, y: 8 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: 0.08 }}
+                                                className="flex items-center gap-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl p-3.5"
                                             >
-                                                <div className="text-left min-w-0">
+                                                <img
+                                                    src={justClaimedRecord.image}
+                                                    alt={justClaimedRecord.title}
+                                                    className="w-16 h-16 rounded-xl object-cover shrink-0 border border-emerald-200 shadow-xs"
+                                                />
+                                                <div className="min-w-0">
+                                                    <span className="text-[11px] font-bold text-emerald-700 block truncate">
+                                                        {justClaimedRecord.brand}
+                                                    </span>
+                                                    <h3 className="text-base sm:text-lg font-extrabold text-gray-900 leading-snug">
+                                                        {justClaimedRecord.title}
+                                                    </h3>
+                                                </div>
+                                            </motion.div>
+
+                                            {/* Clean Dashed Ticket Divider */}
+                                            <div className="border-t-2 border-dashed border-emerald-200/80" />
+
+                                            {/* Code Pill matching Website Typography (Nunito) */}
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 8 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: 0.16 }}
+                                                className="bg-emerald-50/80 border-2 border-emerald-200 rounded-2xl p-4 flex items-center justify-between gap-3"
+                                            >
+                                                <div className="min-w-0">
                                                     <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
                                                         Partner Reward Code
                                                     </p>
-                                                    <p className="font-mono font-black text-gray-900 text-lg tracking-widest truncate">
+                                                    <p className="font-sans font-extrabold text-gray-900 text-lg sm:text-xl tracking-[0.14em] truncate mt-0.5">
                                                         {justClaimedRecord.voucherCode}
                                                     </p>
                                                 </div>
                                                 <motion.button
-                                                    whileHover={{ scale: 1.04 }}
-                                                    whileTap={{ scale: 0.94 }}
+                                                    whileHover={{ scale: 1.03 }}
+                                                    whileTap={{ scale: 0.95 }}
                                                     type="button"
                                                     onClick={() => handleCopyCode(justClaimedRecord.voucherCode)}
-                                                    className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors shrink-0 ${
+                                                    className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors shrink-0 ${
                                                         copiedCode === justClaimedRecord.voucherCode
                                                             ? 'bg-emerald-700 text-white'
                                                             : 'bg-emerald-600 hover:bg-emerald-700 text-white'
@@ -876,8 +862,8 @@ export default function GreenPerksPage() {
                                                 </motion.button>
                                             </motion.div>
 
-                                            <p className="text-[11px] text-gray-400 leading-relaxed">
-                                                Saved inside your <strong>Claimed Perks</strong> drawer · Illustrative GreenPerks demonstration voucher.
+                                            <p className="text-xs text-center text-gray-400 font-medium">
+                                                Saved inside <strong>Claimed ({claimedPerks.length})</strong> · Illustrative showcase voucher
                                             </p>
 
                                             <motion.button
@@ -891,8 +877,8 @@ export default function GreenPerksPage() {
                                             </motion.button>
                                         </div>
                                     </motion.div>
-                                </div>
-                            )}
+                                )}
+                            </AnimatePresence>
                         </motion.div>
                     </motion.div>
                 )}
@@ -905,7 +891,7 @@ export default function GreenPerksPage() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 bg-gray-900/45 backdrop-blur-sm flex items-center justify-center p-4"
+                        className="fixed inset-0 z-50 bg-gray-900/45 backdrop-blur-sm flex items-center justify-center p-4 font-sans"
                         onClick={() => setShowClaimedDrawer(false)}
                     >
                         <motion.div
@@ -937,36 +923,46 @@ export default function GreenPerksPage() {
                                         <p className="text-xs mt-1">Toggle Demo Balance (120 PTS) to try claiming an eco reward!</p>
                                     </div>
                                 ) : (
-                                    claimedPerks.map((item) => (
-                                        <div
-                                            key={item.claimId}
-                                            className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/50 flex items-center justify-between gap-3"
-                                        >
-                                            <div className="flex items-center gap-3 min-w-0">
-                                                {item.partnerLogo && (
-                                                    <div className="w-11 h-11 rounded-xl bg-white border border-gray-200 p-1.5 flex items-center justify-center shrink-0">
-                                                        <img
-                                                            src={item.partnerLogo}
-                                                            alt={item.brand}
-                                                            className="max-h-full max-w-full object-contain"
-                                                        />
-                                                    </div>
-                                                )}
-                                                <div className="min-w-0">
-                                                    <p className="font-bold text-gray-900 text-sm truncate">{item.title}</p>
-                                                    <p className="text-xs text-gray-500 truncate">{item.brand} · {item.pointsCost} PTS</p>
-                                                    <p className="font-mono text-xs font-bold text-emerald-700 mt-1">{item.voucherCode}</p>
-                                                </div>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleCopyCode(item.voucherCode)}
-                                                className="px-3 py-1.5 rounded-lg bg-white border border-emerald-200 text-emerald-700 text-xs font-bold hover:bg-emerald-50 shrink-0"
+                                    claimedPerks.map((item) => {
+                                        const fallbackImg = GREEN_PERKS_CATALOG.find((p) => p.id === item.perkId)?.image;
+                                        const itemImg = item.image || fallbackImg;
+                                        return (
+                                            <div
+                                                key={item.claimId}
+                                                className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/50 flex items-center justify-between gap-3"
                                             >
-                                                {copiedCode === item.voucherCode ? 'Copied' : 'Copy'}
-                                            </button>
-                                        </div>
-                                    ))
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    {itemImg ? (
+                                                        <img
+                                                            src={itemImg}
+                                                            alt={item.title}
+                                                            className="w-12 h-12 rounded-xl object-cover border border-emerald-200 shrink-0"
+                                                        />
+                                                    ) : item.partnerLogo ? (
+                                                        <div className="w-12 h-12 rounded-xl bg-white border border-gray-200 p-1.5 flex items-center justify-center shrink-0">
+                                                            <img
+                                                                src={item.partnerLogo}
+                                                                alt={item.brand}
+                                                                className="max-h-full max-w-full object-contain"
+                                                            />
+                                                        </div>
+                                                    ) : null}
+                                                    <div className="min-w-0">
+                                                        <p className="font-bold text-gray-900 text-sm truncate">{item.title}</p>
+                                                        <p className="text-xs text-gray-500 truncate">{item.brand} · {item.pointsCost} PTS</p>
+                                                        <p className="font-sans text-xs font-extrabold tracking-wider text-emerald-700 mt-1">{item.voucherCode}</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCopyCode(item.voucherCode)}
+                                                    className="px-3 py-1.5 rounded-lg bg-white border border-emerald-200 text-emerald-700 text-xs font-bold hover:bg-emerald-50 shrink-0"
+                                                >
+                                                    {copiedCode === item.voucherCode ? 'Copied' : 'Copy'}
+                                                </button>
+                                            </div>
+                                        );
+                                    })
                                 )}
                             </div>
                         </motion.div>

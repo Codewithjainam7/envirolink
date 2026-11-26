@@ -283,6 +283,50 @@ function mapDbReport(r: any, imagesData: any[] | null | undefined, fallbackImage
 let inFlightReportsPromise: Promise<void> | null = null;
 let inFlightUserReports: { uid: string | null; promise: Promise<void> } | null = null;
 
+function getPublicCachedReports(): Report[] {
+    if (typeof window === 'undefined') return [];
+    try {
+        const raw = localStorage.getItem('envirolink_public_reports_v1');
+        return raw ? JSON.parse(raw) : [];
+    } catch {
+        return [];
+    }
+}
+
+function savePublicCachedReports(reports: Report[]) {
+    if (typeof window === 'undefined') return;
+    try {
+        const lightweight = reports.slice(0, 80).map((r) => ({
+            ...r,
+            images: (r.images || []).filter((img) => img.url && !img.url.startsWith('data:')),
+        }));
+        localStorage.setItem('envirolink_public_reports_v1', JSON.stringify(lightweight));
+    } catch {
+        // Ignore storage quota issues cleanly
+    }
+}
+
+function calculateCityStatsFromReports(mappedReports: Report[]): CityStats {
+    const BASELINE_REPORTS = 500;
+    const BASELINE_RESOLVED = 500;
+    const BASELINE_RATE = 96;
+
+    const realTotal = mappedReports.length;
+    const realResolved = mappedReports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
+    const pending = mappedReports.filter(r => r.status === 'submitted').length;
+    const inProgress = mappedReports.filter(r => ['under_review', 'assigned', 'in_progress'].includes(r.status)).length;
+
+    return {
+        totalReports: BASELINE_REPORTS + realTotal,
+        resolvedReports: BASELINE_RESOLVED + realResolved,
+        pendingReports: pending,
+        inProgressReports: inProgress,
+        resolutionRate: BASELINE_RATE,
+        averageResolutionHours: 18,
+        cleanlinessScore: realTotal > 0 ? Math.round(((realResolved + (inProgress * 0.5)) / realTotal) * 100) : 96,
+    };
+}
+
 async function restInsert<T = any>(
     table: string,
     payload: Record<string, any>,
@@ -999,11 +1043,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
     },
 
-    // Fetch all reports from Supabase cleanly via direct REST (lock-free & bounded)
+    // Fetch all reports cleanly via single embedded REST join (fast cache-first + bounded)
     fetchReports: async () => {
         if (inFlightReportsPromise) return inFlightReportsPromise;
 
         const run = async () => {
+            // Instant cache hydration if store is currently empty
+            if (get().reports.length === 0) {
+                const cached = getPublicCachedReports();
+                if (cached.length > 0) {
+                    set({ reports: cached, cityStats: calculateCityStatsFromReports(cached) });
+                }
+            }
+
             set({ isLoading: true });
             try {
                 let mappedReports: Report[] = [];
@@ -1015,7 +1067,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                     const token = await getFastAccessToken(supabase);
                     const { data: reportsData, error } = await restSelectWithRetry<any>(
                         'reports',
-                        'select=*&order=created_at.desc&limit=250',
+                        'select=*,report_images(*)&order=created_at.desc&limit=250',
                         token,
                         8000
                     );
@@ -1024,21 +1076,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                         fetchErrored = true;
                         console.warn('Supabase reports fetch warning:', error);
                     } else if (reportsData) {
-                        let imagesData: any[] = [];
-                        if (reportsData.length > 0) {
-                            const ids = reportsData.map((r: any) => r.id).filter(Boolean);
-                            if (ids.length > 0) {
-                                const imgRes = await restSelect<any>(
-                                    'report_images',
-                                    `select=*&report_id=in.(${ids.map((id: string) => encodeURIComponent(id)).join(',')})`,
-                                    token,
-                                    8000
-                                );
-                                imagesData = imgRes.data || [];
-                            }
-                        }
-
-                        mappedReports = reportsData.map((r: any) => mapDbReport(r, imagesData));
+                        mappedReports = reportsData.map((r: any) => mapDbReport(r, r.report_images));
                         loadedFromSupabase = true;
                     }
                 } catch (dbErr) {
@@ -1062,29 +1100,13 @@ export const useAppStore = create<AppState>((set, get) => ({
                         }
                     });
                     mappedReports = combined;
+                } else {
+                    savePublicCachedReports(mappedReports);
                 }
-
-                // Calculate stats with baseline values for landing page
-                const BASELINE_REPORTS = 500;
-                const BASELINE_RESOLVED = 500;
-                const BASELINE_RATE = 96;
-
-                const realTotal = mappedReports.length;
-                const realResolved = mappedReports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
-                const pending = mappedReports.filter(r => r.status === 'submitted').length;
-                const inProgress = mappedReports.filter(r => ['under_review', 'assigned', 'in_progress'].includes(r.status)).length;
 
                 set({
                     reports: mappedReports,
-                    cityStats: {
-                        totalReports: BASELINE_REPORTS + realTotal,
-                        resolvedReports: BASELINE_RESOLVED + realResolved,
-                        pendingReports: pending,
-                        inProgressReports: inProgress,
-                        resolutionRate: BASELINE_RATE,
-                        averageResolutionHours: 18,
-                        cleanlinessScore: realTotal > 0 ? Math.round(((realResolved + (inProgress * 0.5)) / realTotal) * 100) : 96,
-                    },
+                    cityStats: calculateCityStatsFromReports(mappedReports),
                     isLoading: false,
                 });
             } catch (error) {
@@ -1124,11 +1146,11 @@ export const useAppStore = create<AppState>((set, get) => ({
                     let remoteReports: any[] = [];
                     let anyQueryError = false;
 
-                    // 1. Fetch reports strictly belonging to this signed-in user
+                    // 1. Fetch reports strictly belonging to this signed-in user (with embedded images in 1 query)
                     if (user && user.id) {
                         const { data: userDbReports, error } = await restSelectWithRetry<any>(
                             'reports',
-                            `select=*&user_id=eq.${encodeURIComponent(user.id)}&order=created_at.desc`,
+                            `select=*,report_images(*)&user_id=eq.${encodeURIComponent(user.id)}&order=created_at.desc`,
                             token,
                             8000
                         );
@@ -1148,7 +1170,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                         if (uuidIds.length > 0) {
                             const { data: byIdReports, error } = await restSelect<any>(
                                 'reports',
-                                `select=*&id=in.(${uuidIds.map(id => encodeURIComponent(id)).join(',')})`,
+                                `select=*,report_images(*)&id=in.(${uuidIds.map(id => encodeURIComponent(id)).join(',')})`,
                                 token,
                                 8000
                             );
@@ -1159,7 +1181,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                         if (codeIds.length > 0) {
                             const { data: byCodeReports, error } = await restSelect<any>(
                                 'reports',
-                                `select=*&report_id=in.(${codeIds.map(id => encodeURIComponent(id)).join(',')})`,
+                                `select=*,report_images(*)&report_id=in.(${codeIds.map(id => encodeURIComponent(id)).join(',')})`,
                                 token,
                                 8000
                             );
@@ -1182,23 +1204,11 @@ export const useAppStore = create<AppState>((set, get) => ({
                         });
                     }
 
-                    if (uniqueRemote.length > 0) {
-                        const reportUuids = uniqueRemote.map(r => r.id).filter(Boolean);
-                        const imgRes = reportUuids.length > 0
-                            ? await restSelect<any>(
-                                'report_images',
-                                `select=*&report_id=in.(${reportUuids.map((id: string) => encodeURIComponent(id)).join(',')})`,
-                                token,
-                                8000
-                            )
-                            : { data: [] };
-
-                        uniqueRemote.forEach((r: any) => {
-                            const mapped = mapDbReport(r, imgRes.data, reportsMap.get(r.id)?.images);
-                            reportsMap.set(r.id, mapped);
-                            saveLocalCachedReport(mapped, user?.id);
-                        });
-                    }
+                    uniqueRemote.forEach((r: any) => {
+                        const mapped = mapDbReport(r, r.report_images, reportsMap.get(r.id)?.images);
+                        reportsMap.set(r.id, mapped);
+                        saveLocalCachedReport(mapped, user?.id);
+                    });
                 } catch (networkErr) {
                     console.warn('Network issue fetching remote user reports, using cached reports:', networkErr);
                 }
@@ -1248,25 +1258,19 @@ export const useAppStore = create<AppState>((set, get) => ({
             return inGlobal;
         }
 
-        // Query Supabase via direct REST (avoiding lock waits)
+        // Query Supabase via single embedded REST join (avoiding lock waits)
         try {
             const supabase = getSupabase();
             const token = await getFastAccessToken(supabase);
             const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query);
             const filter = isUuid
-                ? `select=*&id=eq.${encodeURIComponent(query)}&limit=1`
-                : `select=*&report_id=ilike.${encodeURIComponent(query)}&limit=1`;
+                ? `select=*,report_images(*)&id=eq.${encodeURIComponent(query)}&limit=1`
+                : `select=*,report_images(*)&report_id=ilike.${encodeURIComponent(query)}&limit=1`;
             const { data: rows } = await restSelectWithRetry<any>('reports', filter, token, 8000);
             const reportRecord = rows?.[0];
 
             if (reportRecord) {
-                const imgRes = await restSelect<any>(
-                    'report_images',
-                    `select=*&report_id=eq.${encodeURIComponent(reportRecord.id)}`,
-                    token,
-                    6000
-                );
-                const mapped = mapDbReport(reportRecord, imgRes.data);
+                const mapped = mapDbReport(reportRecord, reportRecord.report_images);
 
                 const uid = get().user?.id;
                 saveLocalReportId(mapped.id, uid);

@@ -388,7 +388,17 @@ export default function ReportsPage() {
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [availableWorkers, setAvailableWorkers] = useState<Worker[]>([]);
     const [selectedAssignWorkerIds, setSelectedAssignWorkerIds] = useState<string[]>([]);
+    const [assignSuccessState, setAssignSuccessState] = useState(false);
+    const [statusBanner, setStatusBanner] = useState<{ id: number; type: 'success' | 'error'; message: string } | null>(null);
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+    const notifyBanner = (type: 'success' | 'error', message: string) => {
+        const id = Date.now();
+        setStatusBanner({ id, type, message });
+        setTimeout(() => {
+            setStatusBanner((prev) => (prev?.id === id ? null : prev));
+        }, 4200);
+    };
     const [advancedFilters, setAdvancedFilters] = useState({
         category: '',
         severity: '',
@@ -402,14 +412,10 @@ export default function ReportsPage() {
             const supabase = createClient();
             const { data: reportsData, error: reportsError } = await supabase
                 .from('reports')
-                .select('*')
+                .select('*, report_images(*)')
                 .order('created_at', { ascending: false });
 
             if (reportsError) throw reportsError;
-
-            const { data: imagesData } = await supabase
-                .from('report_images')
-                .select('*');
 
             const mappedReports: Report[] = (reportsData || []).map((r: any) => ({
                 id: r.id,
@@ -440,10 +446,10 @@ export default function ReportsPage() {
                 rejectionReason: r.rejection_reason || undefined,
                 createdAt: r.created_at,
                 updatedAt: r.updated_at,
-                images: imagesData?.filter((img: any) => img.report_id === r.id).map((img: any) => ({
+                images: (r.report_images || []).map((img: any) => ({
                     id: img.id,
                     url: img.url
-                })) || []
+                }))
             }));
 
             setReports(mappedReports);
@@ -576,10 +582,10 @@ export default function ReportsPage() {
         );
     };
 
-    // Assign 1 or multiple selected workers (crew) to selected reports
+    // Assign 1 or multiple selected workers (crew) to selected reports with animated confirmation
     const assignSelectedCrew = async () => {
         if (selectedAssignWorkerIds.length === 0) {
-            alert('Select at least one worker.');
+            notifyBanner('error', 'Select at least one worker to dispatch.');
             return;
         }
         const chosenWorkers = availableWorkers.filter((w) => selectedAssignWorkerIds.includes(w.id));
@@ -628,7 +634,7 @@ export default function ReportsPage() {
                 if (error) throw error;
             }
 
-            // Update local state
+            // Update local state immediately
             setReports(reports.map(r =>
                 selectedReports.includes(r.id)
                     ? {
@@ -644,13 +650,21 @@ export default function ReportsPage() {
                     : r
             ));
 
+            // Brief smooth success transition inside the modal before closing
+            setAssignSuccessState(true);
+            await new Promise((resolve) => setTimeout(resolve, 650));
+
+            setAssignSuccessState(false);
             setSelectedReports([]);
             setSelectedAssignWorkerIds([]);
             setShowAssignModal(false);
-            alert(`Assigned ${chosenWorkers.length} worker(s) (${allNames}) to ${targetReports.length} report(s).`);
+            notifyBanner(
+                'success',
+                `Dispatched ${chosenWorkers.length} worker(s) (${allNames}) to ${targetReports.length} report(s).`
+            );
         } catch (err) {
             console.error('Error assigning reports:', err);
-            alert('Failed to assign workers. Please try again.');
+            notifyBanner('error', 'Failed to assign workers. Please try again.');
         } finally {
             setBulkActionLoading(false);
         }
@@ -678,7 +692,6 @@ export default function ReportsPage() {
 
             if (error) throw error;
 
-            // Update local state
             setReports(reports.map(r =>
                 selectedReports.includes(r.id)
                     ? { ...r, status: 'resolved' as ReportStatus }
@@ -687,10 +700,10 @@ export default function ReportsPage() {
 
             const count = selectedReports.length;
             setSelectedReports([]);
-            alert(`Successfully resolved ${count} report(s)`);
+            notifyBanner('success', `Successfully resolved ${count} report(s).`);
         } catch (err) {
             console.error('Error resolving reports:', err);
-            alert('Failed to resolve reports. Please try again.');
+            notifyBanner('error', 'Failed to resolve reports. Please try again.');
         } finally {
             setBulkActionLoading(false);
         }
@@ -708,7 +721,6 @@ export default function ReportsPage() {
         try {
             const supabase = createClient();
 
-            // Clean up child images first
             await supabase
                 .from('report_images')
                 .delete()
@@ -723,7 +735,7 @@ export default function ReportsPage() {
             if (error) throw error;
 
             if (!deletedRows || deletedRows.length === 0) {
-                alert('Delete blocked by Supabase RLS policy. Run the DELETE RLS SQL policy in Supabase SQL Editor first.');
+                notifyBanner('error', 'Delete blocked by Supabase RLS policy. Check DELETE RLS permissions.');
                 return;
             }
 
@@ -733,10 +745,10 @@ export default function ReportsPage() {
             if (selectedReport && deletedIds.has(selectedReport.id)) {
                 setSelectedReport(null);
             }
-            alert(`Deleted ${deletedRows.length} report(s)`);
+            notifyBanner('success', `Deleted ${deletedRows.length} report(s).`);
         } catch (err: any) {
             console.error('Error deleting reports:', err);
-            alert(err?.message || 'Failed to delete reports. Please try again.');
+            notifyBanner('error', err?.message || 'Failed to delete reports. Please try again.');
         } finally {
             setBulkActionLoading(false);
         }
@@ -870,6 +882,38 @@ export default function ReportsPage() {
         <div className="space-y-6 relative pb-8">
             <FloatingBlobs />
 
+            {/* Animated Status Toast Banner (replaces blocking native alert boxes) */}
+            <AnimatePresence>
+                {statusBanner && (
+                    <motion.div
+                        key={statusBanner.id}
+                        initial={{ opacity: 0, y: -24, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -20, scale: 0.96 }}
+                        transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+                        className={`fixed top-5 right-5 z-[60] max-w-md px-5 py-3.5 rounded-2xl shadow-2xl border flex items-center gap-3 backdrop-blur-md ${
+                            statusBanner.type === 'success'
+                                ? 'bg-emerald-600/95 border-emerald-400 text-white'
+                                : 'bg-red-600/95 border-red-400 text-white'
+                        }`}
+                    >
+                        {statusBanner.type === 'success' ? (
+                            <CheckCircle size={20} className="shrink-0" />
+                        ) : (
+                            <AlertTriangle size={20} className="shrink-0" />
+                        )}
+                        <p className="text-sm font-semibold leading-snug">{statusBanner.message}</p>
+                        <button
+                            type="button"
+                            onClick={() => setStatusBanner(null)}
+                            className="p-1 rounded-lg hover:bg-white/15 shrink-0"
+                        >
+                            <X size={16} />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Report Detail Modal */}
             <AnimatePresence>
                 {selectedReport && (
@@ -883,27 +927,30 @@ export default function ReportsPage() {
                             setSelectedAssignWorkerIds(
                                 parseCrewIds(r.assignedTo?.departmentId, r.assignedTo?.workerId)
                             );
+                            setAssignSuccessState(false);
                             setShowAssignModal(true);
                         }}
                     />
                 )}
             </AnimatePresence>
 
-            {/* Assign Worker Modal */}
+            {/* Animated Assign Worker / Crew Modal */}
             <AnimatePresence>
                 {showAssignModal && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
                         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-                        onClick={() => setShowAssignModal(false)}
+                        onClick={() => !bulkActionLoading && setShowAssignModal(false)}
                     >
                         <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden"
+                            initial={{ scale: 0.92, opacity: 0, y: 18 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.94, opacity: 0, y: 12 }}
+                            transition={{ type: 'spring', stiffness: 360, damping: 28 }}
+                            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[82vh] overflow-hidden flex flex-col"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {/* Header */}
@@ -916,7 +963,7 @@ export default function ReportsPage() {
                                         </p>
                                     </div>
                                     <button
-                                        onClick={() => setShowAssignModal(false)}
+                                        onClick={() => !bulkActionLoading && setShowAssignModal(false)}
                                         className="p-2 hover:bg-white/20 rounded-xl transition-colors"
                                     >
                                         <X size={20} />
@@ -925,7 +972,7 @@ export default function ReportsPage() {
                             </div>
 
                             {/* Worker Multi-Select List */}
-                            <div className="p-4 max-h-[50vh] overflow-y-auto">
+                            <div className="p-4 max-h-[50vh] overflow-y-auto flex-1">
                                 {availableWorkers.length === 0 ? (
                                     <div className="text-center py-8 text-gray-500">
                                         <User size={48} className="mx-auto mb-3 text-gray-300" />
@@ -933,19 +980,25 @@ export default function ReportsPage() {
                                         <p className="text-sm mt-1">Please add workers in Worker Management</p>
                                     </div>
                                 ) : (
-                                    <div className="space-y-2">
-                                        {availableWorkers.map((worker) => {
-                                            const checked = selectedAssignWorkerIds.includes(worker.id);
+                                    <div className="space-y-2.5">
+                                        {availableWorkers.map((worker, idx) => {
+                                            const selectionIndex = selectedAssignWorkerIds.indexOf(worker.id);
+                                            const checked = selectionIndex !== -1;
                                             return (
-                                                <button
+                                                <motion.button
                                                     key={worker.id}
                                                     type="button"
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{ delay: Math.min(idx * 0.03, 0.2) }}
+                                                    whileHover={{ x: 2 }}
+                                                    whileTap={{ scale: 0.985 }}
                                                     onClick={() => toggleAssignWorker(worker.id)}
-                                                    disabled={bulkActionLoading}
-                                                    className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all border disabled:opacity-50 ${
+                                                    disabled={bulkActionLoading || assignSuccessState}
+                                                    className={`w-full flex items-center gap-3.5 p-3.5 rounded-2xl transition-colors border-2 disabled:opacity-70 ${
                                                         checked
-                                                            ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-500/20'
-                                                            : 'bg-gray-50 hover:bg-emerald-50/50 border-gray-200'
+                                                            ? 'bg-emerald-50/90 border-emerald-400 shadow-sm'
+                                                            : 'bg-gray-50/80 hover:bg-emerald-50/40 border-gray-200'
                                                     }`}
                                                 >
                                                     <div
@@ -955,22 +1008,53 @@ export default function ReportsPage() {
                                                                 : 'bg-white border-gray-300'
                                                         }`}
                                                     >
-                                                        {checked && <Check size={14} />}
+                                                        <AnimatePresence>
+                                                            {checked && (
+                                                                <motion.span
+                                                                    initial={{ scale: 0, rotate: -45 }}
+                                                                    animate={{ scale: 1, rotate: 0 }}
+                                                                    exit={{ scale: 0 }}
+                                                                    transition={{ type: 'spring', stiffness: 500, damping: 24 }}
+                                                                >
+                                                                    <Check size={14} strokeWidth={3} />
+                                                                </motion.span>
+                                                            )}
+                                                        </AnimatePresence>
                                                     </div>
                                                     <div className="w-11 h-11 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-base font-bold text-white shadow-sm shrink-0">
                                                         {worker.first_name[0]}{worker.last_name?.[0] || ''}
                                                     </div>
-                                                    <div className="flex-1 text-left">
-                                                        <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
-                                                        <p className="text-sm text-gray-500">Zone: {worker.zone || 'General'} • {worker.phone}</p>
+                                                    <div className="flex-1 text-left min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="font-bold text-gray-900 truncate">{worker.first_name} {worker.last_name}</p>
+                                                            <AnimatePresence>
+                                                                {checked && (
+                                                                    <motion.span
+                                                                        initial={{ opacity: 0, scale: 0.75 }}
+                                                                        animate={{ opacity: 1, scale: 1 }}
+                                                                        exit={{ opacity: 0, scale: 0.75 }}
+                                                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                                                            selectionIndex === 0
+                                                                                ? 'bg-emerald-600 text-white'
+                                                                                : 'bg-emerald-100 text-emerald-800'
+                                                                        }`}
+                                                                    >
+                                                                        {selectionIndex === 0 ? 'Lead' : `Crew #${selectionIndex + 1}`}
+                                                                    </motion.span>
+                                                                )}
+                                                            </AnimatePresence>
+                                                        </div>
+                                                        <p className="text-xs sm:text-sm text-gray-500 truncate">
+                                                            Zone: {worker.zone || 'General'} • {worker.phone}
+                                                        </p>
                                                     </div>
-                                                    <div className={`px-3 py-1 rounded-full text-xs font-bold ${worker.status === 'active'
+                                                    <div className={`px-2.5 py-1 rounded-full text-xs font-bold shrink-0 ${worker.status === 'active'
                                                         ? 'bg-emerald-100 text-emerald-700'
                                                         : 'bg-blue-100 text-blue-700'
                                                         }`}>
                                                         {worker.status}
                                                     </div>
-                                                </button>
+                                                </motion.button>
                                             );
                                         })}
                                     </div>
@@ -979,30 +1063,62 @@ export default function ReportsPage() {
 
                             {/* Footer */}
                             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-3">
-                                <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
+                                <motion.span
+                                    key={selectedAssignWorkerIds.length}
+                                    initial={{ scale: 0.92 }}
+                                    animate={{ scale: 1 }}
+                                    className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg"
+                                >
                                     {selectedAssignWorkerIds.length === 0
                                         ? 'Pick 1+ workers'
                                         : selectedAssignWorkerIds.length === 1
                                         ? '1 worker selected'
                                         : `Crew of ${selectedAssignWorkerIds.length} workers`}
-                                </span>
+                                </motion.span>
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => setShowAssignModal(false)}
-                                        className="px-4 py-2.5 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition-colors text-sm"
+                                        disabled={bulkActionLoading || assignSuccessState}
+                                        className="px-4 py-2.5 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition-colors text-sm disabled:opacity-50"
                                     >
                                         Cancel
                                     </button>
-                                    <button
+                                    <motion.button
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.97 }}
                                         onClick={assignSelectedCrew}
-                                        disabled={bulkActionLoading || selectedAssignWorkerIds.length === 0}
-                                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-colors text-sm disabled:opacity-50 flex items-center gap-2"
+                                        disabled={bulkActionLoading || assignSuccessState || selectedAssignWorkerIds.length === 0}
+                                        className={`px-5 py-2.5 rounded-xl font-bold transition-all text-sm disabled:opacity-60 flex items-center gap-2 shadow-md ${
+                                            assignSuccessState
+                                                ? 'bg-emerald-500 text-white'
+                                                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                        }`}
                                     >
-                                        <Users size={16} />
-                                        {selectedAssignWorkerIds.length > 1
-                                            ? `Assign Crew (${selectedAssignWorkerIds.length})`
-                                            : 'Assign Worker'}
-                                    </button>
+                                        {assignSuccessState ? (
+                                            <>
+                                                <motion.span
+                                                    initial={{ scale: 0 }}
+                                                    animate={{ scale: 1 }}
+                                                    transition={{ type: 'spring', stiffness: 450, damping: 20 }}
+                                                >
+                                                    <CheckCircle size={16} />
+                                                </motion.span>
+                                                Dispatched!
+                                            </>
+                                        ) : bulkActionLoading ? (
+                                            <>
+                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                Assigning...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Users size={16} />
+                                                {selectedAssignWorkerIds.length > 1
+                                                    ? `Assign Crew (${selectedAssignWorkerIds.length})`
+                                                    : 'Assign Worker'}
+                                            </>
+                                        )}
+                                    </motion.button>
                                 </div>
                             </div>
                         </motion.div>

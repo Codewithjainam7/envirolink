@@ -53,21 +53,20 @@ export default function DashboardPage() {
     setIsLoading(true);
     try {
       const supabase = createClient();
-      const { data: reportsData, error } = await supabase
-        .from('reports')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [reportsRes, workersRes] = await Promise.all([
+        supabase
+          .from('reports')
+          .select('*, report_images(*)')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('workers')
+          .select('id')
+          .in('status', ['approved', 'active']),
+      ]);
 
-      if (error) throw error;
-
-      const { data: imagesData } = await supabase.from('report_images').select('*');
-
-      // Fetch worker count
-      const { data: workersData } = await supabase
-        .from('workers')
-        .select('id')
-        .in('status', ['approved', 'active']);
-      setWorkerCount(workersData?.length || 0);
+      if (reportsRes.error) throw reportsRes.error;
+      const reportsData = reportsRes.data;
+      setWorkerCount(workersRes.data?.length || 0);
 
       const mappedReports: Report[] = (reportsData || []).map((r: any) => ({
         id: r.id,
@@ -85,7 +84,7 @@ export default function DashboardPage() {
         isSlaBreach: r.is_sla_breach,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
-        images: imagesData?.filter((img: any) => img.report_id === r.id).map((img: any) => ({ id: img.id, url: img.url })) || []
+        images: (r.report_images || []).map((img: any) => ({ id: img.id, url: img.url }))
       }));
 
       setReports(mappedReports);

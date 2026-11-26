@@ -26,6 +26,9 @@ interface MapWrapperProps {
     zoom?: number;
     className?: string;
     selectedReportId?: string;
+    tileStyle?: 'street' | 'clean';
+    zoomCommand?: { delta: number; seq: number } | null;
+    userLocation?: { lat: number; lng: number; seq: number } | null;
 }
 
 export default function MapWrapper(props: MapWrapperProps) {

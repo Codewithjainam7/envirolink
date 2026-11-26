@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     Sparkles, Zap, UserPlus, Loader2, CheckCircle, AlertTriangle,
     MapPin, Clock, User, Users, Check, ArrowRight, RefreshCw, Bot
@@ -450,8 +450,8 @@ export default function AIAssignmentPage() {
 
                         {pendingReports.length === 0 ? (
                             <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
+                                initial={{ opacity: 0, scale: 0.96 }}
+                                animate={{ opacity: 1, scale: 1 }}
                                 className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 text-center shadow-lg border-2 border-emerald-100"
                             >
                                 <CheckCircle size={48} className="text-emerald-500 mx-auto mb-4" />
@@ -459,117 +459,150 @@ export default function AIAssignmentPage() {
                                 <p className="text-gray-500">All reports have been assigned to workers.</p>
                             </motion.div>
                         ) : (
-                            <div className="space-y-4">
-                                {pendingReports.map((report, i) => (
-                                    <motion.div
-                                        key={report.id}
-                                        initial={{ opacity: 0, x: -20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: i * 0.1 }}
-                                        className={`bg-white/90 backdrop-blur-sm rounded-2xl p-5 shadow-sm hover:shadow-lg border-2 transition-all cursor-pointer ${selectedReport === report.id ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-emerald-50/50 hover:border-emerald-200'
-                                            }`}
-                                        onClick={() => setSelectedReport(selectedReport === report.id ? null : report.id)}
-                                    >
-                                        <div className="flex items-start justify-between">
-                                            <div>
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${report.severity === 'high' ? 'bg-red-100 text-red-700' :
-                                                        report.severity === 'medium' ? 'bg-amber-100 text-amber-700' :
-                                                            'bg-emerald-100 text-emerald-700'
-                                                        }`}>
-                                                        {(report.severity || 'medium').toUpperCase()}
-                                                    </span>
-                                                    <span className="text-gray-400 text-sm font-mono">{report.report_id}</span>
-                                                </div>
-                                                <h3 className="font-bold text-gray-900 text-lg">{report.category?.replace(/_/g, ' ') || 'Waste Report'}</h3>
-                                                <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 font-medium">
-                                                    <span className="flex items-center gap-1">
-                                                        <MapPin size={14} className="text-emerald-500" />
-                                                        {report.locality || report.address?.slice(0, 30) || 'Unknown location'}
-                                                    </span>
-                                                    <span className="flex items-center gap-1">
-                                                        <Clock size={14} className="text-emerald-500" />
-                                                        {formatTimeAgo(report.created_at)}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSelectedReport(report.id);
-                                                }}
-                                                className="px-4 py-2 bg-emerald-50 text-emerald-700 font-semibold rounded-xl hover:bg-emerald-100 transition-colors flex items-center gap-2"
-                                            >
-                                                <UserPlus size={18} />
-                                                Assign
-                                            </button>
-                                        </div>
-
-                                        {/* Multi-Worker Crew Selection (when expanded) */}
-                                        {selectedReport === report.id && availableWorkers.length > 0 && (
-                                            <motion.div
-                                                initial={{ opacity: 0, height: 0 }}
-                                                animate={{ opacity: 1, height: 'auto' }}
-                                                className="mt-4 pt-4 border-t border-gray-100"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                                                        <Users size={14} className="text-emerald-500" />
-                                                        Select 1 or More Workers ({(selectedCrewByReport[report.id] || []).length} selected)
-                                                    </p>
-                                                    {['high', 'critical'].includes((report.severity || '').toLowerCase()) && (
-                                                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                                                            2+ Crew Recommended
+                            <motion.div layout className="space-y-4">
+                                <AnimatePresence mode="popLayout">
+                                    {pendingReports.map((report, i) => (
+                                        <motion.div
+                                            layout
+                                            key={report.id}
+                                            initial={{ opacity: 0, x: -20 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            exit={{ opacity: 0, x: 40, scale: 0.95 }}
+                                            transition={{ delay: Math.min(i * 0.05, 0.2), layout: { type: 'spring', stiffness: 320, damping: 28 } }}
+                                            className={`bg-white/90 backdrop-blur-sm rounded-2xl p-5 shadow-sm hover:shadow-lg border-2 transition-colors cursor-pointer ${selectedReport === report.id ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-emerald-50/50 hover:border-emerald-200'
+                                                }`}
+                                            onClick={() => setSelectedReport(selectedReport === report.id ? null : report.id)}
+                                        >
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${report.severity === 'high' ? 'bg-red-100 text-red-700' :
+                                                            report.severity === 'medium' ? 'bg-amber-100 text-amber-700' :
+                                                                'bg-emerald-100 text-emerald-700'
+                                                            }`}>
+                                                            {(report.severity || 'medium').toUpperCase()}
                                                         </span>
-                                                    )}
+                                                        <span className="text-gray-400 text-sm font-mono">{report.report_id}</span>
+                                                    </div>
+                                                    <h3 className="font-bold text-gray-900 text-lg">{report.category?.replace(/_/g, ' ') || 'Waste Report'}</h3>
+                                                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 font-medium">
+                                                        <span className="flex items-center gap-1">
+                                                            <MapPin size={14} className="text-emerald-500" />
+                                                            {report.locality || report.address?.slice(0, 30) || 'Unknown location'}
+                                                        </span>
+                                                        <span className="flex items-center gap-1">
+                                                            <Clock size={14} className="text-emerald-500" />
+                                                            {formatTimeAgo(report.created_at)}
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                                                    {availableWorkers.map(worker => {
-                                                        const isChecked = (selectedCrewByReport[report.id] || []).includes(worker.id);
-                                                        return (
-                                                            <button
-                                                                key={worker.id}
-                                                                type="button"
-                                                                onClick={() => toggleWorkerForReport(report.id, worker.id)}
-                                                                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all group ${
-                                                                    isChecked
-                                                                        ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400/30'
-                                                                        : 'bg-gray-50/80 hover:bg-emerald-50/50 border-transparent hover:border-emerald-200'
-                                                                }`}
-                                                            >
-                                                                <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${isChecked ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-300'}`}>
-                                                                    {isChecked && <Check size={12} />}
-                                                                </span>
-                                                                <div className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center font-bold text-emerald-600 shadow-sm">
-                                                                    {worker.first_name[0]}{worker.last_name?.[0] || ''}
-                                                                </div>
-                                                                <div className="flex-1 text-left">
-                                                                    <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
-                                                                    <p className="text-xs font-semibold text-gray-500">{worker.zone || 'Unassigned'} • {worker.phone || 'No phone'}</p>
-                                                                </div>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    disabled={(selectedCrewByReport[report.id] || []).length === 0 || savingId === report.id}
-                                                    onClick={() => handleAssignCrew(report.id)}
-                                                    className="mt-3 w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
+                                                <motion.button
+                                                    whileHover={{ scale: 1.03 }}
+                                                    whileTap={{ scale: 0.96 }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedReport(selectedReport === report.id ? null : report.id);
+                                                    }}
+                                                    className="px-4 py-2 bg-emerald-50 text-emerald-700 font-semibold rounded-xl hover:bg-emerald-100 transition-colors flex items-center gap-2"
                                                 >
-                                                    <Users size={16} />
-                                                    {savingId === report.id
-                                                        ? 'Dispatching...'
-                                                        : (selectedCrewByReport[report.id] || []).length > 1
-                                                        ? `Assign Crew (${(selectedCrewByReport[report.id] || []).length} Workers)`
-                                                        : 'Assign Selected Worker'}
-                                                </button>
-                                            </motion.div>
-                                        )}
-                                    </motion.div>
-                                ))}
-                            </div>
+                                                    <UserPlus size={18} />
+                                                    {selectedReport === report.id ? 'Close' : 'Assign'}
+                                                </motion.button>
+                                            </div>
+
+                                            {/* Multi-Worker Crew Selection (animated expand & spring checkboxes) */}
+                                            <AnimatePresence>
+                                                {selectedReport === report.id && availableWorkers.length > 0 && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: 'auto' }}
+                                                        exit={{ opacity: 0, height: 0 }}
+                                                        transition={{ duration: 0.22 }}
+                                                        className="mt-4 pt-4 border-t border-gray-100 overflow-hidden"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                                                <Users size={14} className="text-emerald-500" />
+                                                                Select 1 or More Workers ({(selectedCrewByReport[report.id] || []).length} selected)
+                                                            </p>
+                                                            {['high', 'critical'].includes((report.severity || '').toLowerCase()) && (
+                                                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                                                    2+ Crew Recommended
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                                                            {availableWorkers.map((worker) => {
+                                                                const crewList = selectedCrewByReport[report.id] || [];
+                                                                const selIdx = crewList.indexOf(worker.id);
+                                                                const isChecked = selIdx !== -1;
+                                                                return (
+                                                                    <motion.button
+                                                                        key={worker.id}
+                                                                        type="button"
+                                                                        whileTap={{ scale: 0.985 }}
+                                                                        onClick={() => toggleWorkerForReport(report.id, worker.id)}
+                                                                        className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors group ${
+                                                                            isChecked
+                                                                                ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400/30'
+                                                                                : 'bg-gray-50/80 hover:bg-emerald-50/50 border-transparent hover:border-emerald-200'
+                                                                        }`}
+                                                                    >
+                                                                        <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-300'}`}>
+                                                                            {isChecked && (
+                                                                                <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 480, damping: 22 }}>
+                                                                                    <Check size={12} strokeWidth={3} />
+                                                                                </motion.span>
+                                                                            )}
+                                                                        </span>
+                                                                        <div className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center font-bold text-emerald-600 shadow-sm shrink-0">
+                                                                            {worker.first_name[0]}{worker.last_name?.[0] || ''}
+                                                                        </div>
+                                                                        <div className="flex-1 text-left min-w-0">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <p className="font-bold text-gray-900 truncate">{worker.first_name} {worker.last_name}</p>
+                                                                                {isChecked && (
+                                                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white">
+                                                                                        {selIdx === 0 ? 'Lead' : `Crew #${selIdx + 1}`}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                            <p className="text-xs font-semibold text-gray-500">{worker.zone || 'Unassigned'} • {worker.phone || 'No phone'}</p>
+                                                                        </div>
+                                                                    </motion.button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        <motion.button
+                                                            whileHover={{ scale: 1.01 }}
+                                                            whileTap={{ scale: 0.98 }}
+                                                            type="button"
+                                                            disabled={(selectedCrewByReport[report.id] || []).length === 0 || savingId === report.id}
+                                                            onClick={() => handleAssignCrew(report.id)}
+                                                            className="mt-3 w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
+                                                        >
+                                                            {savingId === report.id ? (
+                                                                <>
+                                                                    <Loader2 size={16} className="animate-spin" />
+                                                                    Dispatching Crew...
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Users size={16} />
+                                                                    {(selectedCrewByReport[report.id] || []).length > 1
+                                                                        ? `Assign Crew (${(selectedCrewByReport[report.id] || []).length} Workers)`
+                                                                        : 'Assign Selected Worker'}
+                                                                </>
+                                                            )}
+                                                        </motion.button>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </motion.div>
+                                    ))}
+                                </AnimatePresence>
+                            </motion.div>
                         )}
                     </div>
 

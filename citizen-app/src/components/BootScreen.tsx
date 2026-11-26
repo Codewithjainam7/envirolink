@@ -12,16 +12,15 @@ export default function BootScreen({ onComplete, variant = 'citizen' }: BootScre
     const [phase, setPhase] = useState<'rotating' | 'zooming' | 'done'>('rotating');
 
     useEffect(() => {
-        // Phase 1: Icon rotates like Discord (1.5s)
+        // Fast non-sluggish splash (~0.85s total) on initial home visit only
         const rotateTimer = setTimeout(() => {
             setPhase('zooming');
-        }, 1800);
+        }, 450);
 
-        // Phase 2: Logo zooms in like Netflix (0.8s) then fade out
         const zoomTimer = setTimeout(() => {
             setPhase('done');
-            setTimeout(onComplete, 400);
-        }, 3000);
+            setTimeout(onComplete, 200);
+        }, 850);
 
         return () => {
             clearTimeout(rotateTimer);

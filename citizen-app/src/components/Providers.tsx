@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode, useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from '@/contexts/AuthContext';
 import BootScreen from './BootScreen';
@@ -10,17 +11,22 @@ interface ProvidersProps {
 }
 
 export default function Providers({ children }: ProvidersProps) {
-    const [showBoot, setShowBoot] = useState(true);
-    const [hasBooted, setHasBooted] = useState(false);
+    const pathname = usePathname();
+    const [showBoot, setShowBoot] = useState(false);
+    const [hasBooted, setHasBooted] = useState(true);
 
     useEffect(() => {
-        // Only show boot screen once per session
         const booted = sessionStorage.getItem('hasBooted');
-        if (booted) {
+        const isLandingRoute = pathname === '/' || pathname === '/home';
+        if (!booted && isLandingRoute) {
+            setHasBooted(false);
+            setShowBoot(true);
+        } else {
+            sessionStorage.setItem('hasBooted', 'true');
             setShowBoot(false);
             setHasBooted(true);
         }
-    }, []);
+    }, [pathname]);
 
     const handleBootComplete = () => {
         setShowBoot(false);

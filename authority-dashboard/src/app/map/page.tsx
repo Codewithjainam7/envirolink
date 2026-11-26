@@ -34,21 +34,17 @@ export default function MapViewPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-    // Fetch reports from API
+    // Fetch reports from API cleanly via single embedded query
     useEffect(() => {
         const fetchReports = async () => {
             try {
                 const supabase = createClient();
                 const { data: reportsData, error: reportsError } = await supabase
                     .from('reports')
-                    .select('*')
-                    .neq('status', 'resolved') // Optional: Don't show resolved on map by default? Or show all. Let's show all.
+                    .select('*, report_images(*)')
+                    .order('created_at', { ascending: false });
 
                 if (reportsError) throw reportsError;
-
-                const { data: imagesData } = await supabase
-                    .from('report_images')
-                    .select('*');
 
                 const mappedReports: Report[] = (reportsData || []).map((r: any) => ({
                     id: r.id,
@@ -77,10 +73,10 @@ export default function MapViewPage() {
                     isSlaBreach: r.is_sla_breach,
                     createdAt: r.created_at,
                     updatedAt: r.updated_at,
-                    images: imagesData?.filter((img: any) => img.report_id === r.id).map((img: any) => ({
+                    images: (r.report_images || []).map((img: any) => ({
                         id: img.id,
                         url: img.url
-                    })) || []
+                    }))
                 }));
 
                 setReports(mappedReports);
@@ -192,8 +188,17 @@ export default function MapViewPage() {
                                 </div>
                             ) : (
                                 filteredReports.map((report) => {
-                                    const CategoryIcon = WASTE_CATEGORIES[report.category]?.icon ?
-                                        categories[report.category as keyof typeof categories]?.icon || Trash2 : Trash2;
+                                    const categoryMeta = WASTE_CATEGORIES[report.category] || {
+                                        label: String(report.category || 'Waste Report').replace(/_/g, ' '),
+                                        color: '#6b7280',
+                                        icon: 'Trash2',
+                                    };
+                                    const statusMeta = STATUS_CONFIG[report.status] || {
+                                        label: String(report.status || 'Submitted').replace(/_/g, ' '),
+                                        color: '#6b7280',
+                                        bgColor: '#f3f4f6',
+                                    };
+                                    const CategoryIcon = categories[report.category as keyof typeof categories]?.icon || Trash2;
 
                                     return (
                                         <motion.div
@@ -207,8 +212,11 @@ export default function MapViewPage() {
                                         >
                                             <div className="flex items-start justify-between mb-2">
                                                 <div className="flex items-center gap-2">
-                                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${STATUS_CONFIG[report.status].bgColor} ${STATUS_CONFIG[report.status].color}`}>
-                                                        {report.status.replace('_', ' ')}
+                                                    <span
+                                                        className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider"
+                                                        style={{ backgroundColor: statusMeta.bgColor, color: statusMeta.color }}
+                                                    >
+                                                        {statusMeta.label}
                                                     </span>
                                                     <span className="text-xs text-gray-400 font-mono">#{report.reportId.slice(-4)}</span>
                                                 </div>
@@ -221,7 +229,7 @@ export default function MapViewPage() {
                                                     <CategoryIcon size={18} />
                                                 </div>
                                                 <div>
-                                                    <h3 className="text-sm font-bold text-gray-900">{WASTE_CATEGORIES[report.category]?.label || 'Waste Report'}</h3>
+                                                    <h3 className="text-sm font-bold text-gray-900">{categoryMeta.label}</h3>
                                                     <p className="text-xs text-gray-500 line-clamp-1">{report.location.address}</p>
                                                 </div>
                                             </div>
@@ -284,7 +292,7 @@ export default function MapViewPage() {
                                             {selectedReport.severity} Severity
                                         </span>
                                         <h2 className="text-2xl font-bold text-white shadow-sm">
-                                            {WASTE_CATEGORIES[selectedReport.category]?.label}
+                                            {(WASTE_CATEGORIES[selectedReport.category] || { label: String(selectedReport.category || 'Waste Report').replace(/_/g, ' ') }).label}
                                         </h2>
                                     </div>
                                 </div>
@@ -293,15 +301,24 @@ export default function MapViewPage() {
                             {/* Content */}
                             <div className="p-6 space-y-6">
                                 {/* Status Bar */}
-                                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
-                                    <div>
-                                        <p className="text-xs font-bold text-gray-500 uppercase">Current Status</p>
-                                        <p className={`font-bold ${STATUS_CONFIG[selectedReport.status].color}`}>
-                                            {STATUS_CONFIG[selectedReport.status].label}
-                                        </p>
-                                    </div>
-                                    <div className={`w-3 h-3 rounded-full animate-pulse ${STATUS_CONFIG[selectedReport.status].color.replace('text-', 'bg-')}`} />
-                                </div>
+                                {(() => {
+                                    const sMeta = STATUS_CONFIG[selectedReport.status] || {
+                                        label: String(selectedReport.status || 'Submitted').replace(/_/g, ' '),
+                                        color: '#6b7280',
+                                        bgColor: '#f3f4f6',
+                                    };
+                                    return (
+                                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-500 uppercase">Current Status</p>
+                                                <p className="font-bold" style={{ color: sMeta.color }}>
+                                                    {sMeta.label}
+                                                </p>
+                                            </div>
+                                            <div className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: sMeta.color }} />
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Location */}
                                 <div>

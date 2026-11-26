@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
     Globe, Home, Map, Bell, User, Menu, X, Plus, LogIn,
-    ChevronDown, Search, IndianRupee, Info, Phone as PhoneIcon, Languages
+    ChevronDown, Search, IndianRupee, Info, Phone as PhoneIcon, Languages, Sprout
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import clsx from 'clsx';
@@ -14,6 +14,7 @@ import { useAppStore } from '@/store';
 const navLinks = [
     { href: '/home', label: 'Home', icon: Home },
     { href: '/map', label: 'Map', icon: Map },
+    { href: '/perks', label: 'GreenPerks', icon: Sprout },
     { href: '/pricing', label: 'Pricing', icon: IndianRupee },
     { href: '/about', label: 'About', icon: Info },
     { href: '/contact', label: 'Contact', icon: PhoneIcon },

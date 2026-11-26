@@ -140,3 +140,36 @@ export const STATUS_CONFIG: Record<ReportStatus, { label: string; color: string;
   closed: { label: 'Closed', color: '#6b7280', bgColor: 'rgba(107, 114, 128, 0.1)' },
   rejected: { label: 'Rejected', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.1)' },
 };
+
+const EXTRA_CATEGORY_META: Record<string, { label: string; iconName: string; color: string }> = {
+  sewage_overflow: { label: 'Sewage Overflow', iconName: 'Droplets', color: '#06b6d4' },
+  dead_animal: { label: 'Dead Animal', iconName: 'Bug', color: '#84cc16' },
+  burning_waste: { label: 'Burning Waste', iconName: 'Flame', color: '#dc2626' },
+  abandoned_vehicle: { label: 'Abandoned Vehicle', iconName: 'Car', color: '#6366f1' },
+  hazardous_material: { label: 'Hazardous Material', iconName: 'AlertTriangle', color: '#eab308' },
+  hazardous_waste: { label: 'Hazardous Waste', iconName: 'AlertTriangle', color: '#eab308' },
+  electrical_hazard: { label: 'Electrical Hazard', iconName: 'Zap', color: '#f43f5e' },
+};
+
+export function getWasteCategoryMeta(category?: string | null): { label: string; iconName: string; color: string } {
+  if (!category) return { label: 'Waste Issue', iconName: 'Trash2', color: '#10b981' };
+  const primary = (WASTE_CATEGORIES as Record<string, { label: string; iconName: string; color: string }>)[category];
+  if (primary) return primary;
+  if (EXTRA_CATEGORY_META[category]) return EXTRA_CATEGORY_META[category];
+  return {
+    label: category.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    iconName: 'Trash2',
+    color: '#6b7280',
+  };
+}
+
+export function getStatusMeta(status?: string | null): { label: string; color: string; bgColor: string } {
+  if (!status) return STATUS_CONFIG.submitted;
+  const known = (STATUS_CONFIG as Record<string, { label: string; color: string; bgColor: string }>)[status];
+  if (known) return known;
+  return {
+    label: status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    color: '#6b7280',
+    bgColor: 'rgba(107, 114, 128, 0.12)',
+  };
+}

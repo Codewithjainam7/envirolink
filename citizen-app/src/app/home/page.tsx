@@ -95,32 +95,13 @@ export default function HomePage() {
         userReports,
         fetchUserReports
     } = useAppStore();
-    const [mounted, setMounted] = useState(false);
-    const [isBooting, setIsBooting] = useState(true);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
     useEffect(() => {
-        // Initialize auth and fetch data on mount
+        // Initialize auth and fetch live reports cleanly without blocking initial render
         initializeAuth();
         fetchReports();
-
-        // Only play boot overlay once per session so switching back to /home is instant
-        if (typeof window !== 'undefined' && sessionStorage.getItem('hasHomeBooted')) {
-            setIsBooting(false);
-            setMounted(true);
-            return;
-        }
-
-        const bootTimer = setTimeout(() => {
-            if (typeof window !== 'undefined') {
-                sessionStorage.setItem('hasHomeBooted', 'true');
-            }
-            setIsBooting(false);
-            setMounted(true);
-        }, 1200);
-
-        return () => clearTimeout(bootTimer);
-    }, []);
+    }, [initializeAuth, fetchReports]);
 
     useEffect(() => {
         const handleScroll = () => {
@@ -133,102 +114,6 @@ export default function HomePage() {
     const scrollToTop = () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
-
-    // Boot animation screen
-    if (isBooting) {
-        return (
-            <div className="fixed inset-0 bg-gradient-to-br from-emerald-50 via-white to-gray-50 flex items-center justify-center z-[9999]">
-                {/* Same floating blobs as landing page */}
-                <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                    <motion.div
-                        className="absolute w-64 h-64 rounded-full bg-emerald-200/60 blur-3xl"
-                        animate={{ x: [0, 50, 0], y: [0, 30, 0] }}
-                        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                        style={{ top: '10%', right: '15%' }}
-                    />
-                    <motion.div
-                        className="absolute w-80 h-80 rounded-full bg-emerald-300/40 blur-3xl"
-                        animate={{ x: [0, -30, 0], y: [0, 40, 0] }}
-                        transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-                        style={{ top: '40%', left: '5%' }}
-                    />
-                    <motion.div
-                        className="absolute w-72 h-72 rounded-full bg-emerald-100/70 blur-3xl"
-                        animate={{ x: [0, 40, 0], y: [0, -30, 0] }}
-                        transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
-                        style={{ bottom: '15%', right: '25%' }}
-                    />
-                </div>
-
-                {/* Pulsing glow ring behind logo */}
-                <motion.div
-                    className="absolute w-40 h-40 rounded-full"
-                    style={{
-                        background: 'radial-gradient(circle, rgba(16,185,129,0.3) 0%, transparent 70%)',
-                    }}
-                    animate={{
-                        scale: [1, 1.5, 1],
-                        opacity: [0.5, 0.2, 0.5]
-                    }}
-                    transition={{ duration: 1, repeat: 2, ease: "easeInOut" }}
-                />
-
-                {/* Rotating particles */}
-                {[...Array(6)].map((_, i) => (
-                    <motion.div
-                        key={i}
-                        className="absolute w-3 h-3 rounded-full bg-emerald-400"
-                        initial={{
-                            x: 0,
-                            y: 0,
-                            opacity: 0,
-                            scale: 0
-                        }}
-                        animate={{
-                            x: Math.cos((i * 60) * Math.PI / 180) * 60,
-                            y: Math.sin((i * 60) * Math.PI / 180) * 60,
-                            opacity: [0, 1, 0],
-                            scale: [0, 1, 0]
-                        }}
-                        transition={{
-                            duration: 1.5,
-                            delay: i * 0.1,
-                            ease: "easeOut"
-                        }}
-                    />
-                ))}
-
-                {/* Rotating Logo - Fast 360° rotation with scale */}
-                <motion.div
-                    initial={{ rotate: 0, scale: 0.5, opacity: 0 }}
-                    animate={{ rotate: 1080, scale: 1, opacity: 1 }}
-                    transition={{
-                        rotate: { duration: 1.5, ease: [0.25, 0.1, 0.25, 1] },
-                        scale: { duration: 0.5, ease: "easeOut" },
-                        opacity: { duration: 0.3 }
-                    }}
-                    className="relative z-10"
-                >
-                    <motion.img
-                        src="/images/envirolink-icon.png"
-                        alt="ENVIROLINK"
-                        className="w-28 h-28 object-contain"
-                        style={{ filter: 'drop-shadow(0 0 20px rgba(16,185,129,0.5))' }}
-                        animate={{
-                            filter: [
-                                'drop-shadow(0 0 10px rgba(16,185,129,0.3))',
-                                'drop-shadow(0 0 30px rgba(16,185,129,0.6))',
-                                'drop-shadow(0 0 10px rgba(16,185,129,0.3))'
-                            ]
-                        }}
-                        transition={{ duration: 1, repeat: 2 }}
-                    />
-                </motion.div>
-            </div>
-        );
-    }
-
-    if (!mounted) return null;
 
     const recentReports = reports.slice(0, 6);
 

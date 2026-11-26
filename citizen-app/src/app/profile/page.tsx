@@ -313,6 +313,34 @@ export default function ProfilePage() {
 
             {/* My Reports Section inside Profile */}
             <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8 lg:py-10 relative z-10">
+                {/* Clean EnviroLink GreenPerks Wallet Strip (non-intrusive rewards access) */}
+                <div className="mb-8 rounded-2xl bg-gradient-to-r from-emerald-50 via-white to-teal-50 border border-emerald-200/80 p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-start sm:items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-600/20">
+                            <Shield size={22} />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h2 className="text-base sm:text-lg font-bold text-gray-900">
+                                    EnviroLink GreenPerks 🌱
+                                </h2>
+                                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
+                                    {points} PTS Available
+                                </span>
+                            </div>
+                            <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
+                                Redeem earned cleanup points for sponsor-funded eco bottles, jute bags, plants &amp; zero-waste vouchers.
+                            </p>
+                        </div>
+                    </div>
+                    <Link
+                        href="/perks"
+                        className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors shadow-sm shrink-0"
+                    >
+                        Explore GreenPerks
+                    </Link>
+                </div>
+
                 {/* Section Header & Unified Search */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <div className="flex items-center gap-3">

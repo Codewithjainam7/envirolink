@@ -14,6 +14,7 @@ export async function GET(request: Request) {
 
     if (code) {
         const cookieStore = await cookies()
+        const pendingCookies: { name: string; value: string; options: CookieOptions }[] = []
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -23,6 +24,7 @@ export async function GET(request: Request) {
                         return cookieStore.getAll()
                     },
                     setAll(cookiesToSet) {
+                        cookiesToSet.forEach((c) => pendingCookies.push(c))
                         try {
                             cookiesToSet.forEach(({ name, value, options }) =>
                                 cookieStore.set(name, value, options)
@@ -66,8 +68,15 @@ export async function GET(request: Request) {
                 return NextResponse.redirect(`${baseUrl}/login?error=invalid-status`)
             }
 
-            // Worker is approved - allow access
-            return NextResponse.redirect(`${baseUrl}${next}`)
+            // Worker is approved - allow access and explicitly forward session cookies
+            const response = NextResponse.redirect(`${baseUrl}${next}`)
+            pendingCookies.forEach(({ name, value, options }) => {
+                response.cookies.set(name, value, {
+                    ...options,
+                    maxAge: options?.maxAge ?? 60 * 60 * 24 * 30,
+                })
+            })
+            return response
         }
     }
 

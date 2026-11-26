@@ -43,6 +43,8 @@ export async function GET(request: Request) {
     }
 
     if (code) {
+        const pendingCookies: { name: string; value: string; options: any }[] = []
+
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -52,6 +54,7 @@ export async function GET(request: Request) {
                         return cookieStore.getAll()
                     },
                     setAll(cookiesToSet) {
+                        cookiesToSet.forEach((c) => pendingCookies.push(c))
                         try {
                             cookiesToSet.forEach(({ name, value, options }) =>
                                 cookieStore.set(name, value, options)
@@ -73,6 +76,12 @@ export async function GET(request: Request) {
 
         console.log('Session created successfully for:', data.user?.email)
         const response = NextResponse.redirect(`${redirectOrigin}${next}`)
+        pendingCookies.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, {
+                ...options,
+                maxAge: options?.maxAge ?? 60 * 60 * 24 * 30,
+            })
+        })
         response.cookies.delete('envirolink_auth_next')
         return response
     }

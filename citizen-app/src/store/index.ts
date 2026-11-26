@@ -460,16 +460,32 @@ export const useAppStore = create<AppState>((set, get) => ({
                 get().fetchUserReports();
             };
 
-            // Listen for auth changes
-            supabase.auth.onAuthStateChange((_event, session) => {
-                processSession(session).finally(() => {
+            // Initial session check (with cookie-token fallback so redirected OAuth cookies hydrate reliably)
+            let { data: { session } } = await supabase.auth.getSession();
+            if (!session?.user) {
+                const cookieToken = await getFastAccessToken(supabase);
+                if (cookieToken) {
+                    try {
+                        const { data: userRes } = await withTimeout(supabase.auth.getUser(cookieToken), 4000, 'Auth user check') as any;
+                        if (userRes?.user) {
+                            session = { user: userRes.user, access_token: cookieToken } as any;
+                        }
+                    } catch {
+                        // Ignore invalid/expired cookie token
+                    }
+                }
+            }
+            await processSession(session);
+
+            // Listen for subsequent auth changes cleanly
+            supabase.auth.onAuthStateChange((event, nextSession) => {
+                if (event === 'INITIAL_SESSION' && !nextSession?.user && get().isAuthenticated) {
+                    return;
+                }
+                processSession(nextSession).finally(() => {
                     set({ isAuthChecked: true });
                 });
             });
-
-            // Initial session check
-            const { data: { session } } = await supabase.auth.getSession();
-            await processSession(session);
         } catch (error) {
             console.warn('Auth initialization deferred (waiting for active Supabase credentials)');
         } finally {

@@ -47,8 +47,8 @@ export default function WorkerProfilePage() {
             const { data: workerData, error } = await supabase
                 .from('workers')
                 .select('*')
-                .eq('email', user.email)
-                .single();
+                .ilike('email', user.email || '')
+                .maybeSingle();
 
             if (error || !workerData) {
                 router.push('/login');
@@ -57,23 +57,23 @@ export default function WorkerProfilePage() {
 
             setWorker(workerData);
 
-            // Fetch stats
+            // Fetch stats (including shared multi-worker crew tasks)
             const { count: totalTasks } = await supabase
                 .from('reports')
                 .select('*', { count: 'exact', head: true })
-                .eq('assigned_worker_id', workerData.id);
+                .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`);
 
             const { count: completedTasks } = await supabase
                 .from('reports')
                 .select('*', { count: 'exact', head: true })
-                .eq('assigned_worker_id', workerData.id)
+                .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
                 .eq('status', 'resolved');
 
             // Calculate earnings
             const { data: resolvedTasks } = await supabase
                 .from('reports')
                 .select('severity')
-                .eq('assigned_worker_id', workerData.id)
+                .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
                 .eq('status', 'resolved');
 
             let totalEarnings = 0;

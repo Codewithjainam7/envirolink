@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import {
   ClipboardList, MapPin, Clock, AlertTriangle, Flag,
-  User, Wallet, Bell, Navigation, ChevronRight, Star, Leaf, CheckCircle,
+  User, Users, Wallet, Bell, Navigation, ChevronRight, Star, Leaf, CheckCircle,
   Camera, X, Loader2, Upload
 } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
@@ -15,6 +15,13 @@ import BottomNav from '@/components/BottomNav';
 import ActionSlider from '@/components/ActionSlider';
 import GeoTagCameraModal from '@/components/GeoTagCameraModal';
 import { stampWorkerGeoTag } from '@/lib/geotag';
+import { parseCrewIds, parseBackupRequest, formatBackupDepartmentName } from '@/lib/crew';
+
+const BACKUP_REASONS = [
+  'Waste pile larger than expected for one person',
+  'Heavy debris / bulk waste needs team & loader',
+  'Long street stretch / multiple nearby heaps',
+];
 
 const NOTHING_FOUND_FLAGS = [
   { id: 'no_waste', label: 'No waste found at spot' },
@@ -35,6 +42,10 @@ interface Task {
   severity: string;
   status: string;
   description: string;
+  assigned_worker_id?: string | null;
+  assigned_worker_name?: string | null;
+  assigned_department_id?: string | null;
+  assigned_department_name?: string | null;
   images: string[];
 }
 
@@ -72,6 +83,10 @@ export default function WorkerDashboard() {
   const [nothingFoundFlag, setNothingFoundFlag] = useState('no_waste');
   const [nothingFoundReason, setNothingFoundReason] = useState('No waste found at spot');
   const [showWorkerCamera, setShowWorkerCamera] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState<Task | null>(null);
+  const [backupCount, setBackupCount] = useState(2);
+  const [backupReason, setBackupReason] = useState(BACKUP_REASONS[0]);
+  const [requestingBackup, setRequestingBackup] = useState(false);
   const proofInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = createClient();
@@ -119,11 +134,11 @@ export default function WorkerDashboard() {
 
       setWorker(workerData);
 
-      // Fetch assigned tasks
+      // Fetch assigned tasks (including multi-worker shared crew tasks)
       const { data: tasksData } = await supabase
         .from('reports')
         .select('*')
-        .eq('assigned_worker_id', workerData.id)
+        .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
         .in('status', ['assigned', 'in_progress'])
         .order('created_at', { ascending: false });
 
@@ -147,7 +162,7 @@ export default function WorkerDashboard() {
       const { count: completedCount } = await supabase
         .from('reports')
         .select('*', { count: 'exact', head: true })
-        .eq('assigned_worker_id', workerData.id)
+        .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
         .eq('status', 'resolved');
 
       setTasksCompleted(completedCount || 0);
@@ -164,7 +179,7 @@ export default function WorkerDashboard() {
       const { data: completedTasks } = await supabase
         .from('reports')
         .select('created_at, severity')
-        .eq('assigned_worker_id', workerData.id)
+        .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
         .eq('status', 'resolved');
 
       let todayEarnings = 0, weekEarnings = 0, monthEarnings = 0;
@@ -197,19 +212,69 @@ export default function WorkerDashboard() {
     }
   };
 
+  const handleSubmitBackupRequest = async () => {
+    if (!showBackupModal) return;
+    setRequestingBackup(true);
+    try {
+      const deptName = formatBackupDepartmentName(backupCount, backupReason);
+      await supabase
+        .from('reports')
+        .update({
+          assigned_department_name: deptName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', showBackupModal.id);
+
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === showBackupModal.id ? { ...t, assigned_department_name: deptName } : t
+        )
+      );
+      setShowBackupModal(null);
+    } catch (error) {
+      console.error('Backup request error:', error);
+    } finally {
+      setRequestingBackup(false);
+    }
+  };
+
   const handleRejectTask = async (taskId: string) => {
     if (!confirm('Warning: Repeatedly rejecting tasks may affect your rating. Continue?')) return;
 
     try {
-      await supabase
-        .from('reports')
-        .update({
-          status: 'submitted',
-          assigned_worker_id: null,
-          assigned_worker_name: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', taskId);
+      const targetTask = tasks.find((t) => t.id === taskId);
+      const existingIds = targetTask ? parseCrewIds(targetTask.assigned_department_id, targetTask.assigned_worker_id) : [];
+      const remainingIds = worker ? existingIds.filter((id) => id !== worker.id) : [];
+
+      if (remainingIds.length > 0 && targetTask) {
+        const myName = worker ? `${worker.first_name} ${worker.last_name}`.trim() : '';
+        const remainingNames = (targetTask.assigned_worker_name || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter((n) => n && n.toLowerCase() !== myName.toLowerCase());
+
+        await supabase
+          .from('reports')
+          .update({
+            assigned_worker_id: remainingIds[0],
+            assigned_worker_name: remainingNames.join(', ') || targetTask.assigned_worker_name,
+            assigned_department_id: `crew:${remainingIds.join(',')}`,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', taskId);
+      } else {
+        await supabase
+          .from('reports')
+          .update({
+            status: 'submitted',
+            assigned_worker_id: null,
+            assigned_worker_name: null,
+            assigned_department_id: null,
+            assigned_department_name: null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', taskId);
+      }
 
       setTasks(tasks.filter(t => t.id !== taskId));
     } catch (error) {
@@ -668,10 +733,37 @@ export default function WorkerDashboard() {
                   </span>
                 </div>
 
-                <p className="text-gray-600 mb-5 flex items-center gap-2 text-sm pl-1">
+                <p className="text-gray-600 mb-4 flex items-center gap-2 text-sm pl-1">
                   <Leaf size={16} className="text-emerald-400 shrink-0" />
                   {task.address?.slice(0, 60) || task.locality || 'Location not specified'}
                 </p>
+
+                {/* Crew Team & Backup Request Badges */}
+                {(() => {
+                  const crewCount = parseCrewIds(task.assigned_department_id, task.assigned_worker_id).length;
+                  const backupReq = parseBackupRequest(task.assigned_department_name);
+                  if (crewCount <= 1 && !backupReq) return null;
+                  return (
+                    <div className="mb-4 space-y-2">
+                      {crewCount > 1 && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold">
+                          <Users size={14} className="text-emerald-600 shrink-0" />
+                          <span className="truncate">
+                            Crew of {crewCount}: {task.assigned_worker_name}
+                          </span>
+                        </div>
+                      )}
+                      {backupReq && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 font-semibold">
+                          <Users size={14} className="text-amber-600 shrink-0" />
+                          <span className="truncate">
+                            Backup Requested (+{backupReq.count} pending Admin): {backupReq.reason}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {task.status === 'assigned' ? (
                   <div className="mt-4 space-y-2.5">
@@ -683,19 +775,30 @@ export default function WorkerDashboard() {
                         setTimeout(() => handleAcceptTask(task.id), 800);
                       }}
                     />
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => {
+                          setBackupCount(2);
+                          setBackupReason(BACKUP_REASONS[0]);
+                          setShowBackupModal(task);
+                        }}
+                        className="py-2 px-2 rounded-full border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold flex items-center justify-center gap-1 transition"
+                      >
+                        <Users size={12} />
+                        Need Crew
+                      </button>
                       <button
                         onClick={() => openProofModal(task, 'nothing_found')}
-                        className="py-2 px-3 rounded-full border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                        className="py-2 px-2 rounded-full border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold flex items-center justify-center gap-1 transition"
                       >
-                        <Flag size={13} />
-                        Nothing Found (Flag)
+                        <Flag size={12} />
+                        Nothing Found
                       </button>
                       <button
                         onClick={() => handleRejectTask(task.id)}
-                        className="py-2 px-3 rounded-full border border-gray-200 text-xs text-gray-500 hover:text-red-600 hover:border-red-200 font-bold transition-colors"
+                        className="py-2 px-2 rounded-full border border-gray-200 text-[11px] text-gray-500 hover:text-red-600 hover:border-red-200 font-bold transition-colors"
                       >
-                        Decline Task
+                        Decline
                       </button>
                     </div>
                   </div>
@@ -723,13 +826,26 @@ export default function WorkerDashboard() {
                         </motion.button>
                       </Link>
                     </div>
-                    <button
-                      onClick={() => openProofModal(task, 'nothing_found')}
-                      className="w-full py-2.5 rounded-full border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 transition"
-                    >
-                      <Flag size={14} />
-                      Nothing Found at Spot · Flag Report (GeoTag + Photo)
-                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => {
+                          setBackupCount(2);
+                          setBackupReason(BACKUP_REASONS[0]);
+                          setShowBackupModal(task);
+                        }}
+                        className="py-2.5 px-3 rounded-full border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                      >
+                        <Users size={14} />
+                        Need More Workers
+                      </button>
+                      <button
+                        onClick={() => openProofModal(task, 'nothing_found')}
+                        className="py-2.5 px-3 rounded-full border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                      >
+                        <Flag size={14} />
+                        Nothing Found
+                      </button>
+                    </div>
                   </div>
                 )}
               </motion.div>
@@ -954,6 +1070,115 @@ export default function WorkerDashboard() {
                   </>
                 )}
               </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Request Backup Crew Modal */}
+      <AnimatePresence>
+        {showBackupModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => !requestingBackup && setShowBackupModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <Users size={20} className="text-indigo-600" />
+                    Request Backup Crew
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Too much waste for one worker? Notify Admin to assign extra helpers.
+                  </p>
+                </div>
+                <button
+                  onClick={() => !requestingBackup && setShowBackupModal(null)}
+                  className="p-2 hover:bg-gray-100 rounded-full"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">
+                  Extra Workers Needed
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[1, 2, 3].map((cnt) => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      onClick={() => setBackupCount(cnt)}
+                      className={`py-3 rounded-xl border-2 text-sm font-bold transition ${
+                        backupCount === cnt
+                          ? 'bg-indigo-50 border-indigo-500 text-indigo-800'
+                          : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-200'
+                      }`}
+                    >
+                      +{cnt} Worker{cnt > 1 ? 's' : ''}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-5 space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                  Reason
+                </p>
+                <div className="space-y-1.5">
+                  {BACKUP_REASONS.map((reason) => (
+                    <button
+                      key={reason}
+                      type="button"
+                      onClick={() => setBackupReason(reason)}
+                      className={`w-full text-left px-3 py-2 rounded-xl border text-xs font-medium transition ${
+                        backupReason === reason
+                          ? 'bg-indigo-50 border-indigo-400 text-indigo-900'
+                          : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-200'
+                      }`}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={backupReason}
+                  onChange={(e) => setBackupReason(e.target.value)}
+                  placeholder="Describe why extra workers are needed..."
+                  className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-indigo-400 text-gray-800 mt-2"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={requestingBackup}
+                onClick={handleSubmitBackupRequest}
+                className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {requestingBackup ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Sending Request...
+                  </>
+                ) : (
+                  <>
+                    <Users size={18} />
+                    Send Backup Request (+{backupCount} Workers)
+                  </>
+                )}
+              </button>
             </motion.div>
           </motion.div>
         )}

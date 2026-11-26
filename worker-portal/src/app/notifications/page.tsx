@@ -40,19 +40,19 @@ export default function NotificationsPage() {
             const { data: workerData } = await supabase
                 .from('workers')
                 .select('id')
-                .eq('email', user.email)
-                .single();
+                .ilike('email', user.email || '')
+                .maybeSingle();
 
             if (!workerData) {
                 router.push('/login');
                 return;
             }
 
-            // Fetch recently assigned tasks
+            // Fetch recently assigned tasks (including shared crew jobs)
             const { data: assignedTasks } = await supabase
                 .from('reports')
                 .select('*')
-                .eq('assigned_worker_id', workerData.id)
+                .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
                 .order('updated_at', { ascending: false })
                 .limit(10);
 
@@ -60,7 +60,7 @@ export default function NotificationsPage() {
             const { data: completedTasks } = await supabase
                 .from('reports')
                 .select('*')
-                .eq('assigned_worker_id', workerData.id)
+                .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
                 .eq('status', 'resolved')
                 .order('updated_at', { ascending: false })
                 .limit(5);

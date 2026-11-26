@@ -42,19 +42,19 @@ export default function EarningsPage() {
             const { data: workerData } = await supabase
                 .from('workers')
                 .select('id')
-                .eq('email', user.email)
-                .single();
+                .ilike('email', user.email || '')
+                .maybeSingle();
 
             if (!workerData) {
                 router.push('/login');
                 return;
             }
 
-            // Get all completed tasks for this worker
+            // Get all completed tasks for this worker (including crew tasks)
             const { data: completedTasks } = await supabase
                 .from('reports')
                 .select('id, report_id, severity, updated_at')
-                .eq('assigned_worker_id', workerData.id)
+                .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
                 .eq('status', 'resolved')
                 .order('updated_at', { ascending: false });
 

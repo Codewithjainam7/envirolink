@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
     Sparkles, Zap, UserPlus, Loader2, CheckCircle, AlertTriangle,
-    MapPin, Clock, User, ArrowRight, RefreshCw, Bot
+    MapPin, Clock, User, Users, Check, ArrowRight, RefreshCw, Bot
 } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
 import { createClient } from '@/lib/supabase';
+import { encodeCrewIds, parseCrewIds, formatCrewDepartmentName, parseBackupRequest } from '@/lib/crew';
 
 interface PendingReport {
     id: string;
@@ -19,6 +20,14 @@ interface PendingReport {
     longitude: number;
     created_at: string;
     severity: string;
+}
+
+interface BackupReport extends PendingReport {
+    status: string;
+    assigned_worker_id: string | null;
+    assigned_worker_name: string | null;
+    assigned_department_id: string | null;
+    assigned_department_name: string | null;
 }
 
 interface AvailableWorker {
@@ -33,11 +42,15 @@ interface AvailableWorker {
 export default function AIAssignmentPage() {
     const supabase = createClient();
     const [pendingReports, setPendingReports] = useState<PendingReport[]>([]);
+    const [backupReports, setBackupReports] = useState<BackupReport[]>([]);
     const [availableWorkers, setAvailableWorkers] = useState<AvailableWorker[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isAutoAssigning, setIsAutoAssigning] = useState(false);
     const [assignedCount, setAssignedCount] = useState(0);
     const [selectedReport, setSelectedReport] = useState<string | null>(null);
+    const [selectedCrewByReport, setSelectedCrewByReport] = useState<Record<string, string[]>>({});
+    const [backupPickerId, setBackupPickerId] = useState<string | null>(null);
+    const [savingId, setSavingId] = useState<string | null>(null);
     // Settings toggles
     const [autoAssignOnSubmit, setAutoAssignOnSubmit] = useState(false);
     const [workerProximity, setWorkerProximity] = useState(true);
@@ -62,6 +75,15 @@ export default function AIAssignmentPage() {
             }
             console.log('Fetched pending reports:', reportsData?.length || 0);
             setPendingReports(reportsData || []);
+
+            // Fetch active reports where a field worker requested backup crew
+            const { data: activeReportsData } = await supabase
+                .from('reports')
+                .select('id, report_id, category, address, locality, latitude, longitude, created_at, severity, status, assigned_worker_id, assigned_worker_name, assigned_department_id, assigned_department_name')
+                .in('status', ['assigned', 'in_progress'])
+                .ilike('assigned_department_name', 'Backup Requested%')
+                .order('created_at', { ascending: false });
+            setBackupReports((activeReportsData || []) as BackupReport[]);
 
             // Fetch available workers (newest first so newly added workers appear at the top)
             const { data: workersData, error: workersError } = await supabase
@@ -97,7 +119,7 @@ export default function AIAssignmentPage() {
         return `${diffDays} days ago`;
     };
 
-    // AI Auto-assign all pending reports
+    // AI Auto-assign all pending reports (high/critical automatically get a 2-worker crew when available)
     const handleAutoAssignAll = async () => {
         if (pendingReports.length === 0 || availableWorkers.length === 0) return;
 
@@ -107,19 +129,29 @@ export default function AIAssignmentPage() {
         try {
             for (let i = 0; i < pendingReports.length; i++) {
                 const report = pendingReports[i];
-                const worker = availableWorkers[i % availableWorkers.length]; // Round-robin assignment
+                const isHeavy = ['high', 'critical'].includes((report.severity || '').toLowerCase());
+                const lead = availableWorkers[i % availableWorkers.length];
+                const crewList =
+                    isHeavy && availableWorkers.length >= 2
+                        ? [lead, availableWorkers[(i + 1) % availableWorkers.length]]
+                        : [lead];
+                const uniqueCrew = Array.from(new Map(crewList.map((w) => [w.id, w])).values());
+                const names = uniqueCrew.map((w) => `${w.first_name} ${w.last_name}`.trim()).join(', ');
 
                 await supabase
                     .from('reports')
                     .update({
                         status: 'assigned',
-                        assigned_worker_id: worker.id,
-                        assigned_worker_name: `${worker.first_name} ${worker.last_name}`
+                        assigned_worker_id: uniqueCrew[0].id,
+                        assigned_worker_name: names,
+                        assigned_department_id: encodeCrewIds(uniqueCrew.map((w) => w.id)),
+                        assigned_department_name: formatCrewDepartmentName(uniqueCrew.length),
+                        updated_at: new Date().toISOString(),
                     })
                     .eq('id', report.id);
 
                 setAssignedCount(i + 1);
-                await new Promise(r => setTimeout(r, 500)); // Small delay for visual feedback
+                await new Promise(r => setTimeout(r, 350));
             }
 
             // Refresh data
@@ -132,23 +164,101 @@ export default function AIAssignmentPage() {
         }
     };
 
-    // Manual assignment
-    const handleManualAssign = async (reportId: string, worker: AvailableWorker) => {
+    const toggleWorkerForReport = (reportId: string, workerId: string) => {
+        setSelectedCrewByReport((prev) => {
+            const current = prev[reportId] || [];
+            const next = current.includes(workerId)
+                ? current.filter((id) => id !== workerId)
+                : [...current, workerId];
+            return { ...prev, [reportId]: next };
+        });
+    };
+
+    // Assign 1 or multiple workers to a pending report
+    const handleAssignCrew = async (reportId: string) => {
+        const pickedIds = selectedCrewByReport[reportId] || [];
+        const chosen = availableWorkers.filter((w) => pickedIds.includes(w.id));
+        if (chosen.length === 0) return;
+
+        setSavingId(reportId);
         try {
+            const names = chosen.map((w) => `${w.first_name} ${w.last_name}`.trim()).join(', ');
             await supabase
                 .from('reports')
                 .update({
                     status: 'assigned',
-                    assigned_worker_id: worker.id,
-                    assigned_worker_name: `${worker.first_name} ${worker.last_name}`
+                    assigned_worker_id: chosen[0].id,
+                    assigned_worker_name: names,
+                    assigned_department_id: encodeCrewIds(chosen.map((w) => w.id)),
+                    assigned_department_name: formatCrewDepartmentName(chosen.length),
+                    updated_at: new Date().toISOString(),
                 })
                 .eq('id', reportId);
 
             setPendingReports(prev => prev.filter(r => r.id !== reportId));
             setSelectedReport(null);
+            setSelectedCrewByReport((prev) => {
+                const copy = { ...prev };
+                delete copy[reportId];
+                return copy;
+            });
         } catch (error) {
-            console.error('Error assigning:', error);
+            console.error('Error assigning crew:', error);
+        } finally {
+            setSavingId(null);
         }
+    };
+
+    // Append backup workers to an active report without removing current crew
+    const handleDispatchBackup = async (report: BackupReport, addWorkerIds: string[]) => {
+        const existingIds = parseCrewIds(report.assigned_department_id, report.assigned_worker_id);
+        const combinedIds = Array.from(new Set([...existingIds, ...addWorkerIds]));
+        const combinedWorkers = combinedIds
+            .map((id) => availableWorkers.find((w) => w.id === id))
+            .filter(Boolean) as AvailableWorker[];
+
+        // Preserve already-assigned names even if lead worker status changed
+        const existingNameFallback = report.assigned_worker_name
+            ? report.assigned_worker_name.split(',').map((s) => s.trim()).filter(Boolean)
+            : [];
+        const addedNames = addWorkerIds
+            .map((id) => availableWorkers.find((w) => w.id === id))
+            .filter(Boolean)
+            .map((w) => `${w!.first_name} ${w!.last_name}`.trim());
+        const finalNames = combinedWorkers.length === combinedIds.length
+            ? combinedWorkers.map((w) => `${w.first_name} ${w.last_name}`.trim())
+            : Array.from(new Set([...existingNameFallback, ...addedNames]));
+
+        setSavingId(report.id);
+        try {
+            await supabase
+                .from('reports')
+                .update({
+                    assigned_worker_id: report.assigned_worker_id || combinedIds[0] || null,
+                    assigned_worker_name: finalNames.join(', '),
+                    assigned_department_id: encodeCrewIds(combinedIds),
+                    assigned_department_name: formatCrewDepartmentName(combinedIds.length),
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', report.id);
+
+            setBackupReports((prev) => prev.filter((r) => r.id !== report.id));
+            setBackupPickerId(null);
+        } catch (error) {
+            console.error('Error dispatching backup crew:', error);
+        } finally {
+            setSavingId(null);
+        }
+    };
+
+    const handleAutoAddBackup = async (report: BackupReport) => {
+        const req = parseBackupRequest(report.assigned_department_name);
+        const needed = req?.count || 1;
+        const existingIds = parseCrewIds(report.assigned_department_id, report.assigned_worker_id);
+        const candidates = availableWorkers.filter((w) => !existingIds.includes(w.id));
+        if (candidates.length === 0) return;
+        const toAdd = candidates.slice(0, needed).map((w) => w.id);
+        await handleDispatchBackup(report, toAdd);
     };
 
     if (isLoading) {
@@ -223,6 +333,113 @@ export default function AIAssignmentPage() {
                     </div>
                 </motion.div>
 
+                {/* Backup Requests Section (from on-site field workers) */}
+                {backupReports.length > 0 && (
+                    <div className="mb-8">
+                        <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <Users className="text-amber-500" size={20} />
+                            Backup Crew Requests ({backupReports.length})
+                        </h2>
+                        <div className="grid md:grid-cols-2 gap-4">
+                            {backupReports.map((bReport) => {
+                                const req = parseBackupRequest(bReport.assigned_department_name);
+                                const existingIds = parseCrewIds(bReport.assigned_department_id, bReport.assigned_worker_id);
+                                const candidates = availableWorkers.filter((w) => !existingIds.includes(w.id));
+                                const picked = selectedCrewByReport[bReport.id] || [];
+                                const isPickerOpen = backupPickerId === bReport.id;
+
+                                return (
+                                    <div
+                                        key={bReport.id}
+                                        className="bg-amber-50/90 border-2 border-amber-200 rounded-2xl p-5 shadow-sm"
+                                    >
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white">
+                                                        +{req?.count || 1} Backup Needed
+                                                    </span>
+                                                    <span className="font-mono text-xs text-gray-600">{bReport.report_id}</span>
+                                                </div>
+                                                <p className="font-bold text-gray-900">
+                                                    {bReport.category?.replace(/_/g, ' ') || 'Waste Cleanup'} · {bReport.locality}
+                                                </p>
+                                                <p className="text-xs text-amber-900 font-medium mt-1">
+                                                    Reason: {req?.reason}
+                                                </p>
+                                                <p className="text-xs text-gray-600 mt-1">
+                                                    Current Crew ({existingIds.length}): {bReport.assigned_worker_name || 'Assigned worker'}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2 mt-4">
+                                            <button
+                                                type="button"
+                                                disabled={savingId === bReport.id || candidates.length === 0}
+                                                onClick={() => handleAutoAddBackup(bReport)}
+                                                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 disabled:opacity-50"
+                                            >
+                                                <Sparkles size={14} />
+                                                {savingId === bReport.id ? 'Adding...' : `1-Click Auto-Add +${req?.count || 1}`}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setBackupPickerId(isPickerOpen ? null : bReport.id)}
+                                                className="px-3.5 py-2 bg-white border border-amber-300 text-amber-900 text-xs font-bold rounded-xl hover:bg-amber-100 transition"
+                                            >
+                                                {isPickerOpen ? 'Hide List' : 'Pick Workers Manually'}
+                                            </button>
+                                        </div>
+
+                                        {isPickerOpen && (
+                                            <div className="mt-4 pt-3 border-t border-amber-200 space-y-2">
+                                                {candidates.length === 0 ? (
+                                                    <p className="text-xs text-gray-600">All approved workers are already assigned to this job.</p>
+                                                ) : (
+                                                    <>
+                                                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                                            {candidates.map((w) => {
+                                                                const checked = picked.includes(w.id);
+                                                                return (
+                                                                    <button
+                                                                        key={w.id}
+                                                                        type="button"
+                                                                        onClick={() => toggleWorkerForReport(bReport.id, w.id)}
+                                                                        className={`w-full flex items-center gap-2.5 p-2.5 rounded-xl border text-left text-xs transition ${
+                                                                            checked
+                                                                                ? 'bg-emerald-50 border-emerald-400 text-emerald-900'
+                                                                                : 'bg-white border-gray-200 text-gray-700'
+                                                                        }`}
+                                                                    >
+                                                                        <span className={`w-4 h-4 rounded border flex items-center justify-center ${checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300'}`}>
+                                                                            {checked && <Check size={11} />}
+                                                                        </span>
+                                                                        <span className="font-bold">{w.first_name} {w.last_name}</span>
+                                                                        <span className="text-gray-500 ml-auto">{w.zone}</span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            disabled={picked.length === 0 || savingId === bReport.id}
+                                                            onClick={() => handleDispatchBackup(bReport, picked)}
+                                                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl disabled:opacity-50"
+                                                        >
+                                                            Add {picked.length} Helper(s) to Crew
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
                 <div className="grid lg:grid-cols-2 gap-8">
                     {/* Pending Reports */}
                     <div>
@@ -288,35 +505,66 @@ export default function AIAssignmentPage() {
                                             </button>
                                         </div>
 
-                                        {/* Worker Selection (when expanded) */}
+                                        {/* Multi-Worker Crew Selection (when expanded) */}
                                         {selectedReport === report.id && availableWorkers.length > 0 && (
                                             <motion.div
                                                 initial={{ opacity: 0, height: 0 }}
                                                 animate={{ opacity: 1, height: 'auto' }}
                                                 className="mt-4 pt-4 border-t border-gray-100"
+                                                onClick={(e) => e.stopPropagation()}
                                             >
-                                                <p className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-                                                    <Zap size={14} className="text-emerald-500" />
-                                                    Available Workers
-                                                </p>
-                                                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                                                    {availableWorkers.map(worker => (
-                                                        <button
-                                                            key={worker.id}
-                                                            onClick={() => handleManualAssign(report.id, worker)}
-                                                            className="w-full flex items-center gap-3 p-3 bg-gray-50/80 rounded-xl hover:bg-emerald-50 border border-transparent hover:border-emerald-200 transition-all group"
-                                                        >
-                                                            <div className="w-10 h-10 bg-white border border-gray-200 rounded-xl flex items-center justify-center font-bold text-emerald-600 shadow-sm group-hover:scale-105 transition-transform">
-                                                                {worker.first_name[0]}{worker.last_name?.[0] || ''}
-                                                            </div>
-                                                            <div className="flex-1 text-left">
-                                                                <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
-                                                                <p className="text-xs font-semibold text-gray-500">{worker.zone || 'Unassigned'} • {worker.phone || 'No phone'}</p>
-                                                            </div>
-                                                            <ArrowRight size={18} className="text-gray-300 group-hover:text-emerald-500 transition-colors" />
-                                                        </button>
-                                                    ))}
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                                        <Users size={14} className="text-emerald-500" />
+                                                        Select 1 or More Workers ({(selectedCrewByReport[report.id] || []).length} selected)
+                                                    </p>
+                                                    {['high', 'critical'].includes((report.severity || '').toLowerCase()) && (
+                                                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                                            2+ Crew Recommended
+                                                        </span>
+                                                    )}
                                                 </div>
+                                                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                                                    {availableWorkers.map(worker => {
+                                                        const isChecked = (selectedCrewByReport[report.id] || []).includes(worker.id);
+                                                        return (
+                                                            <button
+                                                                key={worker.id}
+                                                                type="button"
+                                                                onClick={() => toggleWorkerForReport(report.id, worker.id)}
+                                                                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all group ${
+                                                                    isChecked
+                                                                        ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400/30'
+                                                                        : 'bg-gray-50/80 hover:bg-emerald-50/50 border-transparent hover:border-emerald-200'
+                                                                }`}
+                                                            >
+                                                                <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${isChecked ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-300'}`}>
+                                                                    {isChecked && <Check size={12} />}
+                                                                </span>
+                                                                <div className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center font-bold text-emerald-600 shadow-sm">
+                                                                    {worker.first_name[0]}{worker.last_name?.[0] || ''}
+                                                                </div>
+                                                                <div className="flex-1 text-left">
+                                                                    <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
+                                                                    <p className="text-xs font-semibold text-gray-500">{worker.zone || 'Unassigned'} • {worker.phone || 'No phone'}</p>
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    disabled={(selectedCrewByReport[report.id] || []).length === 0 || savingId === report.id}
+                                                    onClick={() => handleAssignCrew(report.id)}
+                                                    className="mt-3 w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
+                                                >
+                                                    <Users size={16} />
+                                                    {savingId === report.id
+                                                        ? 'Dispatching...'
+                                                        : (selectedCrewByReport[report.id] || []).length > 1
+                                                        ? `Assign Crew (${(selectedCrewByReport[report.id] || []).length} Workers)`
+                                                        : 'Assign Selected Worker'}
+                                                </button>
                                             </motion.div>
                                         )}
                                     </motion.div>

@@ -5,12 +5,13 @@ import { createClient } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, Filter, Download, ChevronDown, MapPin, Clock,
-    User, Eye, UserPlus, CheckCircle, X,
+    User, Users, Check, Eye, UserPlus, CheckCircle, X,
     Trash2, Package, Recycle, Construction, Cpu, Leaf, AlertTriangle,
     Calendar, Tag, Image as ImageIcon, Phone, Mail, Briefcase
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { Report, WASTE_CATEGORIES, STATUS_CONFIG, SEVERITY_CONFIG, ReportStatus } from '@/types';
+import { encodeCrewIds, parseCrewIds, formatCrewDepartmentName, parseBackupRequest } from '@/lib/crew';
 import FloatingBlobs from '@/components/FloatingBlobs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -56,6 +57,8 @@ function ReportDetailModal({
     const category = WASTE_CATEGORIES[report.category] || { label: report.category, color: '#6b7280', icon: 'Trash2' };
     const status = STATUS_CONFIG[report.status] || { label: report.status, color: '#6b7280', bgColor: '#f3f4f6' };
     const severity = SEVERITY_CONFIG[report.severity] || { label: report.severity, color: '#6b7280' };
+    const backupReq = parseBackupRequest(report.assignedTo?.departmentName);
+    const crewIds = parseCrewIds(report.assignedTo?.departmentId, report.assignedTo?.workerId);
 
     return (
         <motion.div
@@ -256,27 +259,59 @@ function ReportDetailModal({
                                 )}
                             </div>
 
-                            {/* Assigned Worker */}
+                            {/* Backup Request Banner */}
+                            {backupReq && (
+                                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-xs font-bold text-amber-800 uppercase flex items-center gap-1.5">
+                                                <Users size={14} className="text-amber-600" />
+                                                Backup Crew Requested (+{backupReq.count} Workers)
+                                            </p>
+                                            <p className="text-sm text-amber-900 font-medium mt-1">
+                                                {backupReq.reason}
+                                            </p>
+                                        </div>
+                                        {onAssign && (
+                                            <button
+                                                onClick={() => onAssign(report)}
+                                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shrink-0 transition"
+                                            >
+                                                Add Backup
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Assigned Worker / Crew */}
                             <div className="bg-gray-50 rounded-xl p-4">
-                                <p className="text-xs font-semibold text-gray-500 uppercase mb-3 flex items-center gap-2">
-                                    <User size={14} />
-                                    Assigned Worker
-                                </p>
+                                <div className="flex items-center justify-between mb-3">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-2">
+                                        <Users size={14} />
+                                        {crewIds.length > 1 ? `Assigned Crew (${crewIds.length} Workers)` : 'Assigned Worker'}
+                                    </p>
+                                    {crewIds.length > 1 && (
+                                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                                            Multi-Worker Team
+                                        </span>
+                                    )}
+                                </div>
                                 {report.assignedTo ? (
                                     <div className="bg-white rounded-xl p-4 border border-gray-200">
                                         <div className="flex items-center gap-4">
-                                            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-xl font-bold text-white shadow-lg">
-                                                {report.assignedTo.workerName?.split(' ').map(n => n[0]).join('') || 'W'}
+                                            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-xl font-bold text-white shadow-lg shrink-0">
+                                                {crewIds.length > 1 ? `${crewIds.length}W` : (report.assignedTo.workerName?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'W')}
                                             </div>
                                             <div>
-                                                <p className="font-bold text-gray-900 text-lg">{report.assignedTo.workerName || 'Worker'}</p>
-                                                <p className="text-sm text-emerald-600 font-medium">{report.assignedTo.departmentName || 'Department'}</p>
+                                                <p className="font-bold text-gray-900 text-base leading-snug">{report.assignedTo.workerName || 'Worker'}</p>
+                                                <p className="text-sm text-emerald-600 font-medium mt-0.5">{report.assignedTo.departmentName || 'Department'}</p>
                                             </div>
                                         </div>
                                         <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
                                             <div className="flex items-center gap-2 text-sm text-gray-600">
                                                 <Briefcase size={14} className="text-gray-400" />
-                                                <span>ID: {report.assignedTo.workerId?.slice(0, 8) || 'N/A'}</span>
+                                                <span>Lead ID: {report.assignedTo.workerId?.slice(0, 8) || 'N/A'}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -318,13 +353,13 @@ function ReportDetailModal({
                     >
                         Close
                     </button>
-                    {!report.assignedTo && onAssign && (
+                    {!['resolved', 'rejected', 'closed'].includes(report.status) && onAssign && (
                         <button
                             onClick={() => onAssign(report)}
                             className="px-5 py-2.5 bg-emerald-500 text-white rounded-xl font-medium hover:bg-emerald-600 transition-colors flex items-center gap-2 shadow-lg shadow-emerald-500/20"
                         >
-                            <UserPlus size={18} />
-                            Assign Worker
+                            <Users size={18} />
+                            {report.assignedTo ? 'Manage / Add Crew' : 'Assign Worker / Crew'}
                         </button>
                     )}
                 </div>
@@ -352,6 +387,7 @@ export default function ReportsPage() {
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [availableWorkers, setAvailableWorkers] = useState<Worker[]>([]);
+    const [selectedAssignWorkerIds, setSelectedAssignWorkerIds] = useState<string[]>([]);
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
     const [advancedFilters, setAdvancedFilters] = useState({
         category: '',
@@ -518,56 +554,103 @@ export default function ReportsPage() {
         }
     };
 
-    // Handle bulk assign - opens modal with worker selection
+    // Handle bulk assign - opens modal with multi-worker selection
     const handleBulkAssign = async () => {
         if (selectedReports.length === 0) return;
 
         await fetchWorkers();
+        if (selectedReports.length === 1) {
+            const target = reports.find((r) => r.id === selectedReports[0]);
+            setSelectedAssignWorkerIds(
+                target ? parseCrewIds(target.assignedTo?.departmentId, target.assignedTo?.workerId) : []
+            );
+        } else {
+            setSelectedAssignWorkerIds([]);
+        }
         setShowAssignModal(true);
     };
 
-    // Assign selected reports to a worker
-    const assignToWorker = async (worker: Worker) => {
+    const toggleAssignWorker = (workerId: string) => {
+        setSelectedAssignWorkerIds((prev) =>
+            prev.includes(workerId) ? prev.filter((id) => id !== workerId) : [...prev, workerId]
+        );
+    };
+
+    // Assign 1 or multiple selected workers (crew) to selected reports
+    const assignSelectedCrew = async () => {
+        if (selectedAssignWorkerIds.length === 0) {
+            alert('Select at least one worker.');
+            return;
+        }
+        const chosenWorkers = availableWorkers.filter((w) => selectedAssignWorkerIds.includes(w.id));
+        if (chosenWorkers.length === 0) return;
+
+        const leadWorker = chosenWorkers[0];
+        const allNames = chosenWorkers.map((w) => `${w.first_name} ${w.last_name}`.trim()).join(', ');
+        const deptId = encodeCrewIds(chosenWorkers.map((w) => w.id));
+        const deptName = formatCrewDepartmentName(chosenWorkers.length);
+
         setBulkActionLoading(true);
         try {
             const supabase = createClient();
 
-            const { error } = await supabase
-                .from('reports')
-                .update({
-                    status: 'assigned',
-                    assigned_worker_id: worker.id,
-                    assigned_worker_name: `${worker.first_name} ${worker.last_name}`,
-                    assigned_department_id: 'dept-1',
-                    assigned_department_name: 'Sanitation Department',
-                    updated_at: new Date().toISOString()
-                })
-                .in('id', selectedReports);
+            const targetReports = reports.filter((r) => selectedReports.includes(r.id));
+            const inProgressIds = targetReports.filter((r) => r.status === 'in_progress').map((r) => r.id);
+            const pendingIds = targetReports.filter((r) => r.status !== 'in_progress').map((r) => r.id);
 
-            if (error) throw error;
+            if (pendingIds.length > 0) {
+                const { error } = await supabase
+                    .from('reports')
+                    .update({
+                        status: 'assigned',
+                        assigned_worker_id: leadWorker.id,
+                        assigned_worker_name: allNames,
+                        assigned_department_id: deptId,
+                        assigned_department_name: deptName,
+                        updated_at: new Date().toISOString()
+                    })
+                    .in('id', pendingIds);
+                if (error) throw error;
+            }
+
+            if (inProgressIds.length > 0) {
+                const { error } = await supabase
+                    .from('reports')
+                    .update({
+                        status: 'in_progress',
+                        assigned_worker_id: leadWorker.id,
+                        assigned_worker_name: allNames,
+                        assigned_department_id: deptId,
+                        assigned_department_name: deptName,
+                        updated_at: new Date().toISOString()
+                    })
+                    .in('id', inProgressIds);
+                if (error) throw error;
+            }
 
             // Update local state
             setReports(reports.map(r =>
                 selectedReports.includes(r.id)
                     ? {
                         ...r,
-                        status: 'assigned' as ReportStatus,
+                        status: (r.status === 'in_progress' ? 'in_progress' : 'assigned') as ReportStatus,
                         assignedTo: {
-                            departmentId: 'dept-1',
-                            departmentName: 'Sanitation Department',
-                            workerId: worker.id,
-                            workerName: `${worker.first_name} ${worker.last_name}`
+                            departmentId: deptId,
+                            departmentName: deptName,
+                            workerId: leadWorker.id,
+                            workerName: allNames
                         }
                     }
                     : r
             ));
 
             setSelectedReports([]);
+            setSelectedAssignWorkerIds([]);
             setShowAssignModal(false);
-            alert(`Successfully assigned ${selectedReports.length} report(s) to ${worker.first_name} ${worker.last_name}`);
+            alert(`Assigned ${chosenWorkers.length} worker(s) (${allNames}) to ${targetReports.length} report(s).`);
         } catch (err) {
             console.error('Error assigning reports:', err);
-            alert('Failed to assign reports. Please try again.');
+            alert('Failed to assign workers. Please try again.');
         } finally {
             setBulkActionLoading(false);
         }
@@ -797,6 +880,9 @@ export default function ReportsPage() {
                             setSelectedReports([r.id]);
                             setSelectedReport(null);
                             await fetchWorkers();
+                            setSelectedAssignWorkerIds(
+                                parseCrewIds(r.assignedTo?.departmentId, r.assignedTo?.workerId)
+                            );
                             setShowAssignModal(true);
                         }}
                     />
@@ -824,8 +910,10 @@ export default function ReportsPage() {
                             <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-4 text-white">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <h2 className="text-xl font-bold">Assign Worker</h2>
-                                        <p className="text-emerald-100 text-sm">Select a worker for {selectedReports.length} report(s)</p>
+                                        <h2 className="text-xl font-bold">Assign Worker / Crew</h2>
+                                        <p className="text-emerald-100 text-sm">
+                                            Select 1 or multiple workers for {selectedReports.length} report(s)
+                                        </p>
                                     </div>
                                     <button
                                         onClick={() => setShowAssignModal(false)}
@@ -836,7 +924,7 @@ export default function ReportsPage() {
                                 </div>
                             </div>
 
-                            {/* Worker List */}
+                            {/* Worker Multi-Select List */}
                             <div className="p-4 max-h-[50vh] overflow-y-auto">
                                 {availableWorkers.length === 0 ? (
                                     <div className="text-center py-8 text-gray-500">
@@ -846,40 +934,76 @@ export default function ReportsPage() {
                                     </div>
                                 ) : (
                                     <div className="space-y-2">
-                                        {availableWorkers.map((worker) => (
-                                            <button
-                                                key={worker.id}
-                                                onClick={() => assignToWorker(worker)}
-                                                disabled={bulkActionLoading}
-                                                className="w-full flex items-center gap-4 p-4 bg-gray-50 hover:bg-emerald-50 rounded-xl transition-colors border border-gray-200 hover:border-emerald-200 disabled:opacity-50"
-                                            >
-                                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-lg font-bold text-white shadow-lg">
-                                                    {worker.first_name[0]}{worker.last_name?.[0] || ''}
-                                                </div>
-                                                <div className="flex-1 text-left">
-                                                    <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
-                                                    <p className="text-sm text-gray-500">Zone: {worker.zone} • {worker.phone}</p>
-                                                </div>
-                                                <div className={`px-3 py-1 rounded-full text-xs font-bold ${worker.status === 'active'
-                                                    ? 'bg-emerald-100 text-emerald-700'
-                                                    : 'bg-blue-100 text-blue-700'
-                                                    }`}>
-                                                    {worker.status}
-                                                </div>
-                                            </button>
-                                        ))}
+                                        {availableWorkers.map((worker) => {
+                                            const checked = selectedAssignWorkerIds.includes(worker.id);
+                                            return (
+                                                <button
+                                                    key={worker.id}
+                                                    type="button"
+                                                    onClick={() => toggleAssignWorker(worker.id)}
+                                                    disabled={bulkActionLoading}
+                                                    className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all border disabled:opacity-50 ${
+                                                        checked
+                                                            ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-500/20'
+                                                            : 'bg-gray-50 hover:bg-emerald-50/50 border-gray-200'
+                                                    }`}
+                                                >
+                                                    <div
+                                                        className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors ${
+                                                            checked
+                                                                ? 'bg-emerald-500 border-emerald-500 text-white'
+                                                                : 'bg-white border-gray-300'
+                                                        }`}
+                                                    >
+                                                        {checked && <Check size={14} />}
+                                                    </div>
+                                                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-base font-bold text-white shadow-sm shrink-0">
+                                                        {worker.first_name[0]}{worker.last_name?.[0] || ''}
+                                                    </div>
+                                                    <div className="flex-1 text-left">
+                                                        <p className="font-bold text-gray-900">{worker.first_name} {worker.last_name}</p>
+                                                        <p className="text-sm text-gray-500">Zone: {worker.zone || 'General'} • {worker.phone}</p>
+                                                    </div>
+                                                    <div className={`px-3 py-1 rounded-full text-xs font-bold ${worker.status === 'active'
+                                                        ? 'bg-emerald-100 text-emerald-700'
+                                                        : 'bg-blue-100 text-blue-700'
+                                                        }`}>
+                                                        {worker.status}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
 
                             {/* Footer */}
-                            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100">
-                                <button
-                                    onClick={() => setShowAssignModal(false)}
-                                    className="w-full px-5 py-2.5 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition-colors"
-                                >
-                                    Cancel
-                                </button>
+                            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-3">
+                                <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
+                                    {selectedAssignWorkerIds.length === 0
+                                        ? 'Pick 1+ workers'
+                                        : selectedAssignWorkerIds.length === 1
+                                        ? '1 worker selected'
+                                        : `Crew of ${selectedAssignWorkerIds.length} workers`}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setShowAssignModal(false)}
+                                        className="px-4 py-2.5 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition-colors text-sm"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={assignSelectedCrew}
+                                        disabled={bulkActionLoading || selectedAssignWorkerIds.length === 0}
+                                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-colors text-sm disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        <Users size={16} />
+                                        {selectedAssignWorkerIds.length > 1
+                                            ? `Assign Crew (${selectedAssignWorkerIds.length})`
+                                            : 'Assign Worker'}
+                                    </button>
+                                </div>
                             </div>
                         </motion.div>
                     </motion.div>
@@ -1193,16 +1317,37 @@ export default function ReportsPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-4">
-                                                    <span
-                                                        className="px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"
-                                                        style={{
-                                                            backgroundColor: status.bgColor,
-                                                            color: status.color,
-                                                        }}
-                                                    >
-                                                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: status.color }} />
-                                                        {status.label}
-                                                    </span>
+                                                    <div className="space-y-1">
+                                                        <span
+                                                            className="px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"
+                                                            style={{
+                                                                backgroundColor: status.bgColor,
+                                                                color: status.color,
+                                                            }}
+                                                        >
+                                                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: status.color }} />
+                                                            {status.label}
+                                                        </span>
+                                                        {(() => {
+                                                            const bReq = parseBackupRequest(report.assignedTo?.departmentName);
+                                                            const crewCount = parseCrewIds(report.assignedTo?.departmentId, report.assignedTo?.workerId).length;
+                                                            if (bReq) {
+                                                                return (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                                                        <Users size={10} /> Backup +{bReq.count}
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            if (crewCount > 1) {
+                                                                return (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                                        <Users size={10} /> Crew ({crewCount})
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })()}
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-4">
                                                     {report.isSlaBreach ? (

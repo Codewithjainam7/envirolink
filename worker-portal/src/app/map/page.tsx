@@ -39,8 +39,8 @@ export default function WorkerMapPage() {
             const { data: workerData } = await supabase
                 .from('workers')
                 .select('id')
-                .eq('email', user.email)
-                .single();
+                .ilike('email', user.email || '')
+                .maybeSingle();
 
             if (!workerData) {
                 router.push('/login');
@@ -50,7 +50,7 @@ export default function WorkerMapPage() {
             const { data: tasksData } = await supabase
                 .from('reports')
                 .select('*')
-                .eq('assigned_worker_id', workerData.id)
+                .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
                 .in('status', ['assigned', 'in_progress']);
 
             const mappedTasks: Report[] = (tasksData || []).map(r => ({

@@ -54,8 +54,8 @@ export default function AdminLoginPage() {
 
     return (
         <div className="min-h-screen lg:h-screen w-full grid lg:grid-cols-12 bg-gradient-to-br from-emerald-100/80 via-gray-100 to-emerald-50 relative overflow-x-hidden">
-            {/* Left Full-Bleed Visual Panel: flat left edge, rounded ONLY on top-right and bottom-right */}
-            <div className="lg:col-span-6 relative min-h-[340px] lg:h-screen bg-[#022c22] overflow-hidden rounded-bl-[2.5rem] rounded-br-[2.5rem] lg:rounded-tl-none lg:rounded-bl-none lg:rounded-tr-[2.75rem] lg:rounded-br-[2.75rem] shadow-2xl shadow-emerald-950/20 flex flex-col justify-between p-7 sm:p-10 text-white z-10">
+            {/* Left Full-Bleed Visual Panel */}
+            <div className="lg:col-span-6 relative min-h-[340px] lg:h-screen bg-[#022c22] overflow-hidden shadow-2xl shadow-emerald-950/20 flex flex-col justify-between p-7 sm:p-10 text-white z-10">
                 <motion.img
                     initial={{ opacity: 0, scale: 1.03 }}
                     animate={{ opacity: 1, scale: 1 }}

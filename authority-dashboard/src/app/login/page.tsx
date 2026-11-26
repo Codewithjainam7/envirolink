@@ -7,13 +7,30 @@ import {
     Lock, User, AlertCircle, ArrowRight, Eye, EyeOff,
     ShieldCheck, Sparkles, Activity, CheckCircle2, Loader2
 } from 'lucide-react';
-import FloatingBlobs from '@/components/FloatingBlobs';
 
 // Authorized Municipal Authority accounts
 const ADMIN_CREDENTIALS = {
     usernames: ['admin', 'admin@envirolink.in'],
     password: 'admin123'
 };
+
+const PLATFORM_LEGENDS = [
+    {
+        icon: Activity,
+        title: 'Real-Time Command Sync',
+        desc: 'Live report updates, SLA breach tracking, and zone metrics.',
+    },
+    {
+        icon: Sparkles,
+        title: 'Nemotron AI Proof Audit',
+        desc: 'Automated before-and-after cleanup verification for every task.',
+    },
+    {
+        icon: CheckCircle2,
+        title: 'Anti-Fraud & Trust Guards',
+        desc: 'Citizen trust scoring, GPS checks, and worker onboarding control.',
+    },
+];
 
 export default function AdminLoginPage() {
     const [username, setUsername] = useState('');
@@ -46,98 +63,95 @@ export default function AdminLoginPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50/50 to-teal-50/70 flex items-center justify-center p-4 sm:p-6 lg:p-10 relative overflow-hidden">
-            <FloatingBlobs />
+        <div className="min-h-screen w-full grid lg:grid-cols-2 bg-white">
+            {/* Left Half: Full-Height Smart City Visual & Legends */}
+            <div className="relative min-h-[340px] lg:min-h-screen bg-emerald-950 overflow-hidden flex flex-col justify-between p-8 sm:p-10 lg:p-14 text-white">
+                <img
+                    src="/images/admin-login-hero.jpg"
+                    alt="EnviroLink Smart Municipal Operations"
+                    className="absolute inset-0 w-full h-full object-cover object-center"
+                />
+                {/* Scrims keeping middle smart-city illustration crisp while making legends highly legible */}
+                <div className="absolute inset-0 bg-gradient-to-t from-emerald-950 via-emerald-950/35 to-emerald-950/45" />
 
-            {/* Subtle background grid texture */}
-            <div
-                className="fixed inset-0 pointer-events-none opacity-[0.035] z-0"
-                style={{
-                    backgroundImage: 'radial-gradient(#047857 1px, transparent 1px)',
-                    backgroundSize: '28px 28px',
-                }}
-            />
-
-            <motion.div
-                initial={{ opacity: 0, y: 20, scale: 0.985 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.45, ease: [0.165, 0.84, 0.44, 1] }}
-                className="relative z-10 w-full max-w-5xl bg-white/85 backdrop-blur-2xl rounded-[2rem] shadow-2xl shadow-emerald-950/10 border border-emerald-100/80 overflow-hidden grid lg:grid-cols-12"
-            >
-                {/* Left Showcase Panel with Generated Smart City Illustration */}
-                <div className="lg:col-span-6 relative min-h-[260px] sm:min-h-[320px] lg:min-h-[600px] bg-emerald-950 overflow-hidden flex flex-col justify-between p-6 sm:p-8 text-white">
-                    <img
-                        src="/images/admin-login-hero.jpg"
-                        alt="EnviroLink Smart Municipal Operations"
-                        className="absolute inset-0 w-full h-full object-cover object-center scale-[1.02]"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-emerald-950/95 via-emerald-950/35 to-emerald-950/30" />
-
-                    {/* Top Live Command Pill */}
-                    <div className="relative z-10 flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-xs font-semibold tracking-wide text-emerald-50">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            ENVIROLINK COMMAND CENTER
-                        </span>
-                    </div>
-
-                    {/* Bottom Feature Highlights */}
-                    <div className="relative z-10 space-y-4 mt-auto pt-12">
-                        <div>
-                            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight text-white">
-                                Smart Municipal Waste Governance
-                            </h2>
-                            <p className="text-sm text-emerald-100/85 mt-2 leading-relaxed max-w-md">
-                                Monitor live citizen reports, dispatch sanitation teams, and verify AI-audited cleanups from one unified hub.
-                            </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 pt-1">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-xs font-medium text-emerald-50">
-                                <Activity size={13} className="text-emerald-300" />
-                                Real-Time Sync
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-xs font-medium text-emerald-50">
-                                <Sparkles size={13} className="text-emerald-300" />
-                                Nemotron AI Verification
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-xs font-medium text-emerald-50">
-                                <CheckCircle2 size={13} className="text-emerald-300" />
-                                SLA &amp; Trust Guards
-                            </span>
-                        </div>
-                    </div>
+                {/* Top Command Pill */}
+                <div className="relative z-10 flex items-center justify-between">
+                    <span className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-emerald-950/55 backdrop-blur-md border border-emerald-300/25 text-xs font-semibold tracking-wider text-emerald-50 shadow-lg">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        ENVIROLINK · AUTHORITY COMMAND CENTER
+                    </span>
                 </div>
 
-                {/* Right Login Form Panel */}
-                <div className="lg:col-span-6 p-6 sm:p-10 lg:p-12 flex flex-col justify-center bg-white/75">
-                    {/* Brand Header */}
-                    <div className="mb-8">
-                        <div className="flex items-center gap-3 mb-5">
-                            <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center p-2 shadow-sm">
-                                <img
-                                    src="/images/envirolink-icon.png"
-                                    alt="ENVIROLINK"
-                                    className="w-full h-full object-contain"
-                                />
-                            </div>
-                            <div>
-                                <img
-                                    src="/images/envirolink-logo.png"
-                                    alt="ENVIROLINK"
-                                    className="h-5 w-auto object-contain"
-                                />
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 mt-0.5">
-                                    Authority Portal
-                                </p>
-                            </div>
-                        </div>
+                {/* Bottom Legends */}
+                <div className="relative z-10 mt-auto pt-16 max-w-xl">
+                    <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-white">
+                        Smart Municipal Waste Governance
+                    </h2>
+                    <p className="text-sm sm:text-base text-emerald-100/90 mt-2.5 leading-relaxed">
+                        Manage city-wide waste reports, assign field teams, and verify cleanups in real time.
+                    </p>
 
-                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
+                    <div className="mt-6 grid gap-3">
+                        {PLATFORM_LEGENDS.map((item) => {
+                            const Icon = item.icon;
+                            return (
+                                <div
+                                    key={item.title}
+                                    className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-emerald-950/60 backdrop-blur-md border border-white/15"
+                                >
+                                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center shrink-0 mt-0.5">
+                                        <Icon size={18} className="text-emerald-300" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-white leading-snug">{item.title}</p>
+                                        <p className="text-xs text-emerald-100/80 mt-0.5 leading-relaxed">{item.desc}</p>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            {/* Right Half: Full-Height Centered Login Panel */}
+            <div className="min-h-[calc(100vh-340px)] lg:min-h-screen flex items-center justify-center p-6 sm:p-10 lg:p-16 bg-gradient-to-br from-slate-50 via-white to-emerald-50/40 relative overflow-hidden">
+                {/* Subtle ambient glow */}
+                <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-emerald-200/30 blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full bg-teal-200/25 blur-3xl pointer-events-none" />
+
+                <motion.div
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, ease: [0.165, 0.84, 0.44, 1] }}
+                    className="relative z-10 w-full max-w-md"
+                >
+                    {/* Brand Lockup */}
+                    <div className="flex items-center gap-3.5 mb-8">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center p-2 shadow-sm">
+                            <img
+                                src="/images/envirolink-icon.png"
+                                alt="ENVIROLINK"
+                                className="w-full h-full object-contain"
+                            />
+                        </div>
+                        <div>
+                            <img
+                                src="/images/envirolink-logo.png"
+                                alt="ENVIROLINK"
+                                className="h-6 w-auto object-contain"
+                            />
+                            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600 mt-0.5">
+                                Municipal Authority Portal
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="mb-8">
+                        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
                             Welcome back, Officer
                         </h1>
-                        <p className="text-sm text-gray-500 mt-1.5">
-                            Sign in to access city analytics, dispatch, and worker approvals.
+                        <p className="text-sm sm:text-base text-gray-500 mt-2">
+                            Sign in to access city analytics, report dispatch, and worker approvals.
                         </p>
                     </div>
 
@@ -147,7 +161,7 @@ export default function AdminLoginPage() {
                                 initial={{ opacity: 0, y: -8 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -8 }}
-                                className="mb-6 p-3.5 bg-red-50 border border-red-200/80 rounded-2xl flex items-start gap-2.5 text-red-700 text-sm"
+                                className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-red-700 text-sm"
                             >
                                 <AlertCircle size={18} className="shrink-0 mt-0.5 text-red-500" />
                                 <span>{error}</span>
@@ -169,7 +183,7 @@ export default function AdminLoginPage() {
                                     type="text"
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
-                                    className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-white border-2 border-gray-100 text-gray-900 text-sm font-medium placeholder-gray-400 focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 outline-none transition-all"
+                                    className="w-full pl-11 pr-4 py-4 rounded-2xl bg-white border-2 border-gray-200/80 text-gray-900 text-sm font-medium placeholder-gray-400 focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 outline-none transition-all shadow-sm"
                                     placeholder="Enter admin username"
                                     autoComplete="username"
                                     required
@@ -190,7 +204,7 @@ export default function AdminLoginPage() {
                                     type={showPassword ? 'text' : 'password'}
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full pl-11 pr-12 py-3.5 rounded-2xl bg-white border-2 border-gray-100 text-gray-900 text-sm font-medium placeholder-gray-400 focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 outline-none transition-all"
+                                    className="w-full pl-11 pr-12 py-4 rounded-2xl bg-white border-2 border-gray-200/80 text-gray-900 text-sm font-medium placeholder-gray-400 focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 outline-none transition-all shadow-sm"
                                     placeholder="••••••••"
                                     autoComplete="current-password"
                                     required
@@ -211,7 +225,7 @@ export default function AdminLoginPage() {
                             disabled={loading}
                             whileHover={{ scale: 1.01, y: -1 }}
                             whileTap={{ scale: 0.985 }}
-                            className="w-full py-3.5 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-sm rounded-2xl shadow-lg shadow-emerald-600/25 hover:shadow-xl hover:shadow-emerald-600/30 transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
+                            className="w-full py-4 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-base rounded-2xl shadow-lg shadow-emerald-600/25 hover:shadow-xl hover:shadow-emerald-600/30 transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
                         >
                             {loading ? (
                                 <>
@@ -227,12 +241,12 @@ export default function AdminLoginPage() {
                         </motion.button>
                     </form>
 
-                    <div className="mt-8 pt-6 border-t border-gray-100 flex items-center justify-center gap-2 text-xs text-gray-500">
+                    <div className="mt-8 pt-6 border-t border-gray-200/70 flex items-center justify-center gap-2 text-xs text-gray-500">
                         <ShieldCheck size={15} className="text-emerald-600 shrink-0" />
                         <span>Authorized Municipal Authority Portal · Mumbai Operations</span>
                     </div>
-                </div>
-            </motion.div>
+                </motion.div>
+            </div>
         </div>
     );
 }

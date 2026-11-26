@@ -13,8 +13,7 @@ import { formatDistanceToNow, format } from 'date-fns';
 import { Report, WASTE_CATEGORIES, STATUS_CONFIG, SEVERITY_CONFIG, ReportStatus } from '@/types';
 import { encodeCrewIds, parseCrewIds, formatCrewDepartmentName, parseBackupRequest } from '@/lib/crew';
 import FloatingBlobs from '@/components/FloatingBlobs';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { exportReportsManagementPDF } from '@/lib/pdfExport';
 
 const statusFilters: { key: ReportStatus | 'all'; label: string }[] = [
     { key: 'all', label: 'All Reports' },
@@ -754,128 +753,10 @@ export default function ReportsPage() {
         }
     };
 
-    // Enhanced PDF Export
+    // Crisp full-width PDF Export using shared KPI + grid template
     const exportToPDF = () => {
-        const doc = new jsPDF('l', 'mm', 'a4'); // Landscape for more space
-        const pageWidth = doc.internal.pageSize.getWidth();
-
-        // Header with gradient effect
-        doc.setFillColor(16, 185, 129);
-        doc.rect(0, 0, pageWidth, 35, 'F');
-
-        // Logo/Title
-        doc.setFontSize(24);
-        doc.setTextColor(255, 255, 255);
-        doc.setFont('helvetica', 'bold');
-        doc.text('EnviroLink', 14, 18);
-
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'normal');
-        doc.text('Reports Management System', 14, 26);
-
-        // Report info box
-        doc.setFillColor(240, 253, 244);
-        doc.roundedRect(14, 42, pageWidth - 28, 20, 3, 3, 'F');
-
-        doc.setFontSize(10);
-        doc.setTextColor(16, 185, 129);
-        doc.setFont('helvetica', 'bold');
-        doc.text('Report Summary', 20, 50);
-
-        doc.setTextColor(75, 85, 99);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Generated: ${format(new Date(), 'PPPP')} at ${format(new Date(), 'pp')}`, 20, 56);
-        doc.text(`Total Reports: ${filteredReports.length}`, 150, 50);
-        doc.text(`SLA Breaches: ${filteredReports.filter(r => r.isSlaBreach).length}`, 150, 56);
-        doc.text(`New Reports: ${filteredReports.filter(r => r.status === 'submitted').length}`, 220, 50);
-        doc.text(`Resolved: ${filteredReports.filter(r => r.status === 'resolved').length}`, 220, 56);
-
-        // Table data
-        const tableData = filteredReports.map(report => {
-            const category = WASTE_CATEGORIES[report.category] || { label: report.category };
-            const status = STATUS_CONFIG[report.status] || { label: report.status };
-            const severity = SEVERITY_CONFIG[report.severity] || { label: report.severity };
-
-            return [
-                report.reportId,
-                `${report.location.locality || 'Unknown'}\n${report.location.city || 'Mumbai'}`,
-                category.label,
-                severity.label.toUpperCase(),
-                status.label,
-                report.assignedTo?.workerName || 'Unassigned',
-                report.isSlaBreach ? 'BREACHED' : `${Math.max(0, Math.round((new Date(report.slaDueAt).getTime() - Date.now()) / (1000 * 60 * 60)))}h left`,
-                format(new Date(report.createdAt), 'MMM d, yyyy\nh:mm a')
-            ];
-        });
-
-        autoTable(doc, {
-            head: [['Report ID', 'Location', 'Category', 'Severity', 'Status', 'Assigned To', 'SLA', 'Reported']],
-            body: tableData,
-            startY: 68,
-            styles: {
-                fontSize: 8,
-                cellPadding: 3,
-                lineColor: [229, 231, 235],
-                lineWidth: 0.1,
-            },
-            headStyles: {
-                fillColor: [16, 185, 129],
-                textColor: 255,
-                fontStyle: 'bold',
-                halign: 'center',
-            },
-            alternateRowStyles: {
-                fillColor: [249, 250, 251]
-            },
-            columnStyles: {
-                0: { fontStyle: 'bold', cellWidth: 25 },
-                1: { cellWidth: 40 },
-                2: { cellWidth: 30 },
-                3: { halign: 'center', cellWidth: 22 },
-                4: { halign: 'center', cellWidth: 25 },
-                5: { cellWidth: 35 },
-                6: { halign: 'center', cellWidth: 22 },
-                7: { cellWidth: 30 },
-            },
-            didParseCell: (data) => {
-                // Color severity cells
-                if (data.column.index === 3 && data.section === 'body') {
-                    const val = data.cell.raw?.toString().toLowerCase();
-                    if (val === 'critical') {
-                        data.cell.styles.textColor = [220, 38, 38];
-                        data.cell.styles.fontStyle = 'bold';
-                    } else if (val === 'high') {
-                        data.cell.styles.textColor = [234, 88, 12];
-                    } else if (val === 'medium') {
-                        data.cell.styles.textColor = [202, 138, 4];
-                    }
-                }
-                // Color SLA breach cells
-                if (data.column.index === 6 && data.section === 'body') {
-                    if (data.cell.raw?.toString().includes('BREACH')) {
-                        data.cell.styles.textColor = [220, 38, 38];
-                        data.cell.styles.fontStyle = 'bold';
-                        data.cell.styles.fillColor = [254, 226, 226];
-                    }
-                }
-            }
-        });
-
-        // Footer
-        const pageCount = (doc as any).internal.getNumberOfPages();
-        for (let i = 1; i <= pageCount; i++) {
-            doc.setPage(i);
-            doc.setFontSize(8);
-            doc.setTextColor(156, 163, 175);
-            doc.text(
-                `Page ${i} of ${pageCount} | EnviroLink Reports - ${format(new Date(), 'yyyy-MM-dd')}`,
-                pageWidth / 2,
-                doc.internal.pageSize.getHeight() - 10,
-                { align: 'center' }
-            );
-        }
-
-        doc.save(`EnviroLink-Reports-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`);
+        exportReportsManagementPDF(filteredReports);
+        notifyBanner('success', `Exported ${filteredReports.length} report(s) to PDF.`);
     };
 
     return (
@@ -1128,24 +1009,24 @@ export default function ReportsPage() {
 
             <div className="relative z-10">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">Reports Management</h1>
                         <p className="text-gray-500 text-sm mt-1">
                             {filteredReports.length} reports found
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                         <button
                             onClick={exportToPDF}
-                            className="flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-sm text-gray-700 rounded-xl font-medium text-sm border border-emerald-100 shadow-sm hover:bg-white hover:shadow-md transition-all"
+                            className="flex items-center gap-2 px-4 py-2.5 bg-white/90 backdrop-blur-sm text-gray-700 rounded-xl font-medium text-sm border border-emerald-200 shadow-sm hover:bg-white hover:shadow-md transition-all"
                         >
                             <Download size={16} />
                             Export PDF
                         </button>
                         <button
                             onClick={() => setShowAdvancedFilter(!showAdvancedFilter)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm shadow-lg transition-all ${hasActiveAdvancedFilters
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm shadow-lg transition-all ${hasActiveAdvancedFilters
                                 ? 'bg-emerald-600 text-white shadow-emerald-600/20'
                                 : 'bg-emerald-500 text-white shadow-emerald-500/20 hover:bg-emerald-600'
                                 }`}
@@ -1256,12 +1137,12 @@ export default function ReportsPage() {
                 {/* Main Content Card */}
                 <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-emerald-100 overflow-hidden">
                     {/* Status Tabs */}
-                    <div className="flex gap-2 p-2 border-b border-gray-100 overflow-x-auto bg-white/50">
+                    <div className="flex gap-2 p-3 border-b border-gray-100 overflow-x-auto bg-white/60">
                         {statusFilters.map((filter) => (
                             <button
                                 key={filter.key}
                                 onClick={() => setActiveFilter(filter.key)}
-                                className={`px-4 py-2.5 text-sm font-medium rounded-xl transition-all ${activeFilter === filter.key
+                                className={`px-4 py-2 text-sm font-medium rounded-xl transition-all whitespace-nowrap shrink-0 ${activeFilter === filter.key
                                     ? 'bg-emerald-50 text-emerald-700 shadow-sm ring-1 ring-emerald-200'
                                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                                     }`}
@@ -1277,16 +1158,16 @@ export default function ReportsPage() {
                         ))}
                     </div>
 
-                    {/* Search */}
-                    <div className="p-4 flex items-center justify-between gap-4 bg-white/50">
-                        <div className="relative flex-1 max-w-md">
-                            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    {/* Search & Selection Bar */}
+                    <div className="p-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 bg-white/50">
+                        <div className="relative flex-1 min-w-[240px] max-w-md">
+                            <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                             <input
                                 type="text"
                                 placeholder="Search by ID, location, or area..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                                className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
                             />
                         </div>
 
@@ -1294,10 +1175,10 @@ export default function ReportsPage() {
                             <motion.div
                                 initial={{ opacity: 0, x: 20 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                className="flex items-center gap-3 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100"
+                                className="flex flex-wrap items-center gap-2 sm:gap-3 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100"
                             >
-                                <span className="text-sm font-bold text-emerald-800">{selectedReports.length} selected</span>
-                                <div className="h-5 w-px bg-emerald-200" />
+                                <span className="text-sm font-bold text-emerald-800 whitespace-nowrap">{selectedReports.length} selected</span>
+                                <div className="h-5 w-px bg-emerald-200 hidden sm:block" />
                                 <button
                                     onClick={handleBulkAssign}
                                     disabled={bulkActionLoading}
@@ -1335,10 +1216,10 @@ export default function ReportsPage() {
 
                     {/* Reports Table */}
                     <div className="overflow-x-auto">
-                        <table className="w-full">
+                        <table className="w-full min-w-[960px]">
                             <thead>
-                                <tr className="bg-gray-50/50 border-y border-gray-100">
-                                    <th className="w-12 px-4 py-4 text-left">
+                                <tr className="bg-gray-50/70 border-y border-gray-100">
+                                    <th className="w-12 px-4 sm:px-5 py-3.5 text-left">
                                         <input
                                             type="checkbox"
                                             checked={selectedReports.length === filteredReports.length && filteredReports.length > 0}
@@ -1346,14 +1227,14 @@ export default function ReportsPage() {
                                             className="w-4 h-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
                                         />
                                     </th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Report ID</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Location</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Category</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Severity</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">SLA</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reported</th>
-                                    <th className="w-24 px-4 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</th>
+                                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Report ID</th>
+                                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Location</th>
+                                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Category</th>
+                                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Severity</th>
+                                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Status</th>
+                                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">SLA</th>
+                                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Reported</th>
+                                    <th className="px-4 sm:px-5 py-3.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Action</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -1382,10 +1263,10 @@ export default function ReportsPage() {
                                                 key={report.id}
                                                 initial={{ opacity: 0 }}
                                                 animate={{ opacity: 1 }}
-                                                transition={{ delay: index * 0.02 }}
+                                                transition={{ delay: Math.min(index * 0.015, 0.25) }}
                                                 className={`hover:bg-gray-50/80 transition-colors ${isSelected ? 'bg-emerald-50/60' : ''}`}
                                             >
-                                                <td className="px-4 py-4">
+                                                <td className="px-4 sm:px-5 py-4">
                                                     <input
                                                         type="checkbox"
                                                         checked={isSelected}
@@ -1393,7 +1274,7 @@ export default function ReportsPage() {
                                                         className="w-4 h-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
                                                     />
                                                 </td>
-                                                <td className="px-4 py-4">
+                                                <td className="px-4 py-4 whitespace-nowrap">
                                                     <span className="font-mono text-sm font-medium text-gray-900">{report.reportId}</span>
                                                 </td>
                                                 <td className="px-4 py-4">
@@ -1402,14 +1283,14 @@ export default function ReportsPage() {
                                                             <MapPin size={12} className="text-emerald-600" />
                                                         </div>
                                                         <div className="min-w-0">
-                                                            <p className="font-medium text-gray-900 text-sm truncate max-w-[150px]">
+                                                            <p className="font-medium text-gray-900 text-sm truncate max-w-[170px]">
                                                                 {report.location.locality || 'Unknown'}
                                                             </p>
-                                                            <p className="text-xs text-gray-500">{report.location.city || 'Mumbai'}</p>
+                                                            <p className="text-xs text-gray-500 truncate max-w-[170px]">{report.location.city || 'Mumbai'}</p>
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-4">
+                                                <td className="px-4 py-4 whitespace-nowrap">
                                                     <div className="flex items-center gap-2">
                                                         <span className="p-1.5 rounded-lg bg-gray-50 border border-gray-100">
                                                             {(() => {
@@ -1420,9 +1301,9 @@ export default function ReportsPage() {
                                                         <span className="text-sm font-medium text-gray-700">{category.label}</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-4">
+                                                <td className="px-4 py-4 whitespace-nowrap">
                                                     <span
-                                                        className="px-2 py-0.5 rounded-full text-xs font-bold border"
+                                                        className="px-2.5 py-0.5 rounded-full text-xs font-bold border inline-block"
                                                         style={{
                                                             backgroundColor: `${severity.color}10`,
                                                             color: severity.color,
@@ -1432,7 +1313,7 @@ export default function ReportsPage() {
                                                         {severity.label.toUpperCase()}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-4">
+                                                <td className="px-4 py-4 whitespace-nowrap">
                                                     <div className="space-y-1">
                                                         <span
                                                             className="px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"
@@ -1465,26 +1346,26 @@ export default function ReportsPage() {
                                                         })()}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-4">
+                                                <td className="px-4 py-4 whitespace-nowrap">
                                                     {report.isSlaBreach ? (
-                                                        <span className="flex items-center gap-1 text-red-600 text-xs font-bold bg-red-50 px-2 py-1 rounded-md border border-red-100 w-fit">
+                                                        <span className="flex items-center gap-1 text-red-600 text-xs font-bold bg-red-50 px-2.5 py-1 rounded-md border border-red-100 w-fit">
                                                             <Clock size={12} />
                                                             Breached
                                                         </span>
                                                     ) : (
-                                                        <span className="text-gray-600 text-xs font-medium bg-gray-50 px-2 py-1 rounded-md border border-gray-100">
+                                                        <span className="text-gray-600 text-xs font-medium bg-gray-50 px-2.5 py-1 rounded-md border border-gray-100 inline-block">
                                                             {Math.max(0, Math.round((new Date(report.slaDueAt).getTime() - Date.now()) / (1000 * 60 * 60)))}h left
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-4">
+                                                <td className="px-4 py-4 whitespace-nowrap">
                                                     <div>
                                                         <p className="text-sm font-medium text-gray-900">{timeAgo}</p>
                                                         <p className="text-xs text-gray-500">{format(new Date(report.createdAt), 'MMM d, h:mm a')}</p>
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-4 text-center">
-                                                    <div className="flex items-center justify-center gap-1.5">
+                                                <td className="px-4 sm:px-5 py-4 text-center whitespace-nowrap">
+                                                    <div className="flex items-center justify-center gap-2">
                                                         <button
                                                             onClick={() => setSelectedReport(report)}
                                                             className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center gap-1.5"
@@ -1496,7 +1377,7 @@ export default function ReportsPage() {
                                                             onClick={() => handleDeleteReports([report.id])}
                                                             disabled={bulkActionLoading}
                                                             title="Delete Report"
-                                                            className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                                                            className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
                                                         >
                                                             <Trash2 size={14} />
                                                         </button>
@@ -1511,7 +1392,7 @@ export default function ReportsPage() {
                     </div>
 
                     {/* Pagination */}
-                    <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6 py-4 border-t border-gray-100 bg-gray-50/50">
                         <p className="text-sm text-gray-500 font-medium">
                             Showing 1-{filteredReports.length} of {filteredReports.length} reports
                         </p>

@@ -10,6 +10,7 @@ export interface GreenPerkItem {
     id: string;
     title: string;
     brand: string;
+    partnerLogo: string;
     category: Exclude<PerkCategory, 'all'>;
     categoryLabel: string;
     pointsCost: number;
@@ -23,11 +24,11 @@ export interface GreenPerkItem {
 export interface SponsorShowcasePartner {
     id: string;
     name: string;
+    logo: string;
     focus: string;
     rewardModel: string;
     websiteLabel: string;
     accentColor: string;
-    initials: string;
 }
 
 export const PERK_CATEGORIES: { id: PerkCategory; label: string }[] = [
@@ -44,6 +45,7 @@ export const GREEN_PERKS_CATALOG: GreenPerkItem[] = [
         id: 'perk-steel-bottle',
         title: 'Insulated Stainless Steel Bottle',
         brand: 'Beco (Showcase Partner)',
+        partnerLogo: '/images/partners/beco.png',
         category: 'eco_essentials',
         categoryLabel: 'Everyday Eco',
         pointsCost: 100,
@@ -57,6 +59,7 @@ export const GREEN_PERKS_CATALOG: GreenPerkItem[] = [
         id: 'perk-jute-bag',
         title: 'Heavy-Duty Natural Jute Tote Bag',
         brand: 'Beco (Showcase Partner)',
+        partnerLogo: '/images/partners/beco.png',
         category: 'eco_essentials',
         categoryLabel: 'Everyday Eco',
         pointsCost: 60,
@@ -69,12 +72,13 @@ export const GREEN_PERKS_CATALOG: GreenPerkItem[] = [
     {
         id: 'perk-indoor-plant',
         title: 'Air-Purifying Succulent & Ceramic Pot',
-        brand: 'Urban Nursery Partner (Demo)',
+        brand: 'Ugaoo Nursery (Showcase Partner)',
+        partnerLogo: '/images/partners/ugaoo.png',
         category: 'gardening',
         categoryLabel: 'Plants & Seeds',
         pointsCost: 80,
         image: '/images/perks/indoor-plant.jpg',
-        description: 'Easy-care home succulent in a minimalist ceramic planter sourced from local nursery partners.',
+        description: 'Easy-care home succulent in a matte ceramic planter sourced with urban nursery partners.',
         retailValue: 'Worth ₹399',
         tag: 'Citizen Favorite',
         demoNote: 'Illustrative sponsor reward (demo showcase)',
@@ -82,12 +86,13 @@ export const GREEN_PERKS_CATALOG: GreenPerkItem[] = [
     {
         id: 'perk-compost-kit',
         title: 'Countertop Home Composting Kit',
-        brand: 'EcoBin India (Showcase Partner)',
+        brand: 'Daily Dump (Showcase Partner)',
+        partnerLogo: '/images/partners/dailydump.png',
         category: 'waste_management',
         categoryLabel: 'Waste & Compost',
         pointsCost: 150,
         image: '/images/perks/compost-kit.jpg',
-        description: 'Odour-sealed kitchen bin + microbe starter mix to convert wet household waste into garden manure.',
+        description: 'Odour-sealed kitchen composter + microbe starter mix turning wet household waste into garden compost.',
         retailValue: 'Worth ₹899',
         tag: 'Zero-Waste Hero',
         demoNote: 'Illustrative sponsor reward (demo showcase)',
@@ -95,12 +100,13 @@ export const GREEN_PERKS_CATALOG: GreenPerkItem[] = [
     {
         id: 'perk-seed-stationery',
         title: 'Plantable Seed-Paper Notebook & Pen Set',
-        brand: 'Phool / Rescript (Showcase Partner)',
+        brand: 'Phool (Showcase Partner)',
+        partnerLogo: '/images/partners/phool.png',
         category: 'stationery',
         categoryLabel: 'Recycled Stationery',
         pointsCost: 50,
         image: '/images/perks/seed-stationery.jpg',
-        description: 'Upcycled kraft notebooks with wildflower seed covers and bamboo pens made from recycled fiber.',
+        description: 'Upcycled kraft notebooks with wildflower seed covers and bamboo pens crafted from recovered fiber.',
         retailValue: 'Worth ₹249',
         tag: 'Eco Stationery',
         demoNote: 'Illustrative sponsor reward (demo showcase)',
@@ -109,6 +115,7 @@ export const GREEN_PERKS_CATALOG: GreenPerkItem[] = [
         id: 'perk-eco-voucher',
         title: '20% Off Eco Refill & Home Care Voucher',
         brand: 'The Better Home (Showcase Partner)',
+        partnerLogo: '/images/partners/betterhome.png',
         category: 'vouchers',
         categoryLabel: 'Brand Vouchers',
         pointsCost: 30,
@@ -124,37 +131,55 @@ export const SHOWCASE_SPONSOR_PARTNERS: SponsorShowcasePartner[] = [
     {
         id: 'beco',
         name: 'Beco',
+        logo: '/images/partners/beco.png',
         focus: 'Reusable & sustainable household products',
         rewardModel: '20% eco-bundle discounts & steel bottles for verified citizens',
-        websiteLabel: 'Outreach Target · D2C Eco Brand',
+        websiteLabel: 'D2C Eco Brand · Outreach Target',
         accentColor: '#10b981',
-        initials: 'BC',
     },
     {
         id: 'better-home',
         name: 'The Better Home',
+        logo: '/images/partners/betterhome.png',
         focus: 'Environment-conscious home cleaning & refill packs',
         rewardModel: 'Digital vouchers on plastic-free refill starters',
-        websiteLabel: 'Outreach Target · Home Care',
+        websiteLabel: 'Home Care · Outreach Target',
         accentColor: '#0ea5e9',
-        initials: 'BH',
     },
     {
         id: 'phool',
         name: 'Phool',
-        focus: 'Upcycled temple-flower lifestyle & incense goods',
+        logo: '/images/partners/phool.png',
+        focus: 'Upcycled temple-flower lifestyle & botanical goods',
         rewardModel: 'Recycled stationery & organic gift packs',
-        websiteLabel: 'Outreach Target · Circular Brand',
-        accentColor: '#8b5cf6',
-        initials: 'PH',
+        websiteLabel: 'Circular Brand · Outreach Target',
+        accentColor: '#ca8a04',
     },
     {
         id: 'bisleri',
         name: 'Bisleri — Bottles for Change',
+        logo: '/images/partners/bottlesforchange.png',
         focus: 'Plastic waste segregation & neighbourhood drives',
         rewardModel: 'Sponsored 30-Day Clean Neighbourhood Challenges',
-        websiteLabel: 'Outreach Target · CSR Initiative',
+        websiteLabel: 'CSR Initiative · Outreach Target',
         accentColor: '#14b8a6',
-        initials: 'BF',
+    },
+    {
+        id: 'ugaoo',
+        name: 'Ugaoo',
+        logo: '/images/partners/ugaoo.png',
+        focus: 'Urban plants, seeds & sustainable gardening kits',
+        rewardModel: 'Green planter & home-garden reward vouchers',
+        websiteLabel: 'Gardening Brand · Outreach Target',
+        accentColor: '#15803d',
+    },
+    {
+        id: 'dailydump',
+        name: 'Daily Dump',
+        logo: '/images/partners/dailydump.png',
+        focus: 'Decentralized household & community composting systems',
+        rewardModel: 'Home composting starter kits & segregation bins',
+        websiteLabel: 'Compost Pioneer · Outreach Target',
+        accentColor: '#f59e0b',
     },
 ];

@@ -18,8 +18,7 @@ import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase';
 import FloatingBlobs from '@/components/FloatingBlobs';
 import { useRouter } from 'next/navigation';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { exportExecutiveDashboardPDF } from '@/lib/pdfExport';
 
 // Dynamic import for map
 const MapWrapper = dynamic(() => import('@/components/MapWrapper'), {
@@ -141,120 +140,9 @@ export default function DashboardPage() {
     setIsLoading(false);
   };
 
-  // Export Dashboard PDF - Same design as Reports page
+  // Export Dashboard PDF using unified full-width crisp template
   const exportDashboardPDF = () => {
-    const doc = new jsPDF('l', 'mm', 'a4'); // Landscape for more space
-    const pageWidth = doc.internal.pageSize.getWidth();
-
-    // Header with gradient effect
-    doc.setFillColor(16, 185, 129);
-    doc.rect(0, 0, pageWidth, 35, 'F');
-
-    // Logo/Title
-    doc.setFontSize(24);
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.text('EnviroLink', 14, 18);
-
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Dashboard Report', 14, 26);
-
-    // Report info box
-    doc.setFillColor(240, 253, 244);
-    doc.roundedRect(14, 42, pageWidth - 28, 20, 3, 3, 'F');
-
-    doc.setFontSize(10);
-    doc.setTextColor(16, 185, 129);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Dashboard Summary', 20, 50);
-
-    doc.setTextColor(75, 85, 99);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Generated: ${format(new Date(), 'PPPP')} at ${format(new Date(), 'pp')}`, 20, 56);
-    doc.text(`Total Reports: ${dashboardStats.totalReports}`, 150, 50);
-    doc.text(`SLA Breaches: ${dashboardStats.slaBreach}`, 150, 56);
-    doc.text(`New Reports: ${dashboardStats.newReports}`, 200, 50);
-    doc.text(`Resolved: ${dashboardStats.resolved}`, 200, 56);
-    doc.text(`Workers: ${workerCount}`, 250, 50);
-    doc.text(`Rate: ${dashboardStats.resolutionRate}%`, 250, 56);
-
-    // Table data
-    const tableData = reports.slice(0, 20).map(report => {
-      const category = WASTE_CATEGORIES[report.category] || { label: report.category };
-      const status = STATUS_CONFIG[report.status] || { label: report.status };
-      const severity = SEVERITY_CONFIG[report.severity] || { label: report.severity };
-
-      return [
-        report.reportId,
-        `${report.location.locality || 'Unknown'}\n${report.location.city || 'Mumbai'}`,
-        category.label,
-        severity.label.toUpperCase(),
-        status.label,
-        report.assignedTo?.workerName || 'Unassigned',
-        format(new Date(report.createdAt), 'MMM d, yyyy\nh:mm a')
-      ];
-    });
-
-    autoTable(doc, {
-      head: [['Report ID', 'Location', 'Category', 'Severity', 'Status', 'Assigned To', 'Reported']],
-      body: tableData,
-      startY: 68,
-      styles: {
-        fontSize: 8,
-        cellPadding: 3,
-        lineColor: [229, 231, 235],
-        lineWidth: 0.1,
-      },
-      headStyles: {
-        fillColor: [16, 185, 129],
-        textColor: 255,
-        fontStyle: 'bold',
-        halign: 'center',
-      },
-      alternateRowStyles: {
-        fillColor: [249, 250, 251]
-      },
-      columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 25 },
-        1: { cellWidth: 45 },
-        2: { cellWidth: 35 },
-        3: { halign: 'center', cellWidth: 22 },
-        4: { halign: 'center', cellWidth: 25 },
-        5: { cellWidth: 40 },
-        6: { cellWidth: 35 },
-      },
-      didParseCell: (data: any) => {
-        // Color severity cells
-        if (data.column.index === 3 && data.section === 'body') {
-          const val = data.cell.raw?.toString().toLowerCase();
-          if (val === 'critical') {
-            data.cell.styles.textColor = [220, 38, 38];
-            data.cell.styles.fontStyle = 'bold';
-          } else if (val === 'high') {
-            data.cell.styles.textColor = [234, 88, 12];
-          } else if (val === 'medium') {
-            data.cell.styles.textColor = [202, 138, 4];
-          }
-        }
-      }
-    });
-
-    // Footer
-    const pageCount = (doc as any).internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(156, 163, 175);
-      doc.text(
-        `Page ${i} of ${pageCount} | EnviroLink Dashboard - ${format(new Date(), 'yyyy-MM-dd')}`,
-        pageWidth / 2,
-        doc.internal.pageSize.getHeight() - 10,
-        { align: 'center' }
-      );
-    }
-
-    doc.save(`EnviroLink-Dashboard-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`);
+    exportExecutiveDashboardPDF(reports, dashboardStats, workerCount);
   };
 
   useEffect(() => {

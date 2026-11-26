@@ -25,6 +25,9 @@ export default function BootAppWrapper({ children }: { children: React.ReactNode
     const [isAuthed, setIsAuthed] = useState(false);
 
     const handleBootComplete = useCallback(() => {
+        if (typeof window !== 'undefined') {
+            sessionStorage.setItem('adminBooted', 'true');
+        }
         setShowBoot(false);
     }, []);
 
@@ -32,6 +35,10 @@ export default function BootAppWrapper({ children }: { children: React.ReactNode
         const authed = isAdminAuthenticated();
         setIsAuthed(authed);
         setAuthChecked(true);
+
+        if (typeof window !== 'undefined' && (sessionStorage.getItem('adminBooted') || pathname === '/login')) {
+            setShowBoot(false);
+        }
 
         if (!authed && pathname !== '/login') {
             router.replace('/login');

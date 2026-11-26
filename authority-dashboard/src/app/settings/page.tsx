@@ -149,17 +149,20 @@ export default function SettingsPage() {
 
     const handleSignOut = () => {
         if (confirm('Are you sure you want to sign out?')) {
-            // Clear any local storage/auth state
-            alert('Signed out successfully!');
-            // In a real app, would redirect to login
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('admin_session');
+                document.cookie = 'envirolink_admin_auth=; path=/; max-age=0';
+            }
             window.location.href = '/login';
         }
     };
 
     const handleRevokeSessions = () => {
         if (confirm('This will sign you out from all devices. Are you sure?')) {
-            alert('All sessions have been revoked. You will be signed out.');
-            // In a real app, would invalidate all sessions and redirect
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('admin_session');
+                document.cookie = 'envirolink_admin_auth=; path=/; max-age=0';
+            }
             window.location.href = '/login';
         }
     };

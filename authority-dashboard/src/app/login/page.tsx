@@ -6,9 +6,9 @@ import { motion } from 'framer-motion';
 import { Lock, User, LogIn, AlertCircle, ArrowRight, Eye, EyeOff, Shield } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
 
-// Default admin credentials for testing
+// Authorized Municipal Authority accounts
 const ADMIN_CREDENTIALS = {
-    username: 'admin',
+    usernames: ['admin', 'admin@envirolink.in'],
     password: 'admin123'
 };
 
@@ -25,17 +25,17 @@ export default function AdminLoginPage() {
         setLoading(true);
         setError(null);
 
-        // Simple credential check
-        if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
-            // Store admin session
+        const normalizedUser = username.trim().toLowerCase();
+        if (ADMIN_CREDENTIALS.usernames.includes(normalizedUser) && password === ADMIN_CREDENTIALS.password) {
             if (typeof window !== 'undefined') {
                 localStorage.setItem('admin_session', JSON.stringify({
-                    username,
+                    username: normalizedUser,
                     loggedInAt: new Date().toISOString(),
                     role: 'admin'
                 }));
+                document.cookie = 'envirolink_admin_auth=1; path=/; max-age=86400; SameSite=Lax';
             }
-            router.push('/');
+            router.replace('/');
         } else {
             setError('Invalid username or password');
         }
@@ -128,12 +128,9 @@ export default function AdminLoginPage() {
                         </motion.button>
                     </form>
 
-                    <div className="mt-6 pt-6 border-t border-gray-200">
-                        <p className="text-center text-sm text-gray-500">
-                            Default credentials for testing:
-                        </p>
-                        <p className="text-center text-sm font-mono bg-gray-100 rounded-lg p-2 mt-2">
-                            admin / admin123
+                    <div className="mt-6 pt-5 border-t border-gray-200/70 text-center">
+                        <p className="text-xs text-gray-500">
+                            Restricted to authorized municipal officers only.
                         </p>
                     </div>
                 </motion.div>

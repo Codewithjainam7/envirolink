@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
     LayoutDashboard, FileText, Map, Users, BarChart3,
     Settings, Bell, LogOut, ChevronRight, Sparkles
@@ -20,6 +20,15 @@ const navItems = [
 
 export default function Sidebar() {
     const pathname = usePathname();
+    const router = useRouter();
+
+    const handleLogout = () => {
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('admin_session');
+            document.cookie = 'envirolink_admin_auth=; path=/; max-age=0';
+        }
+        router.replace('/login');
+    };
 
     return (
         <aside className="sidebar">
@@ -74,7 +83,13 @@ export default function Sidebar() {
                         <p className="font-medium text-gray-900 text-sm truncate">Admin User</p>
                         <p className="text-xs text-gray-500">Mumbai Municipal</p>
                     </div>
-                    <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                    <button
+                        type="button"
+                        onClick={handleLogout}
+                        title="Sign Out"
+                        aria-label="Sign Out"
+                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
                         <LogOut size={18} />
                     </button>
                 </div>

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Lock, User, AlertCircle, ArrowRight, Eye, EyeOff,
-    ShieldCheck, Sparkles, Activity, CheckCircle2, Loader2, KeyRound
+    ShieldCheck, Loader2, KeyRound
 } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
 
@@ -14,24 +14,6 @@ const ADMIN_CREDENTIALS = {
     usernames: ['admin', 'admin@envirolink.in'],
     password: 'admin123'
 };
-
-const PLATFORM_LEGENDS = [
-    {
-        icon: Activity,
-        title: 'Real-Time Sync',
-        desc: 'Live reports & SLA breach alerts.',
-    },
-    {
-        icon: Sparkles,
-        title: 'Nemotron AI Audit',
-        desc: 'Before & after cleanup proof.',
-    },
-    {
-        icon: CheckCircle2,
-        title: 'Trust & GPS Guards',
-        desc: 'Anti-fraud & worker approvals.',
-    },
-];
 
 export default function AdminLoginPage() {
     const [username, setUsername] = useState('');
@@ -65,64 +47,40 @@ export default function AdminLoginPage() {
 
     return (
         <div className="min-h-screen lg:h-screen w-full grid lg:grid-cols-12 bg-gradient-to-br from-emerald-50/70 via-slate-50 to-teal-50/70 relative overflow-x-hidden">
-            {/* Left Showcase Panel: Flat on left edge, rounded ONLY on right edge facing the login form */}
-            <div className="lg:col-span-6 relative lg:h-screen bg-gradient-to-br from-[#022c22] via-[#064e3b] to-[#042f2e] overflow-hidden rounded-b-[2rem] lg:rounded-b-none lg:rounded-r-[2.75rem] shadow-2xl shadow-emerald-950/30 flex flex-col justify-between p-6 sm:p-8 lg:p-10 text-white z-10">
-                {/* Ambient glow behind smart-city artwork */}
-                <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-emerald-400/20 blur-3xl pointer-events-none" />
+            {/* Left Full-Bleed Showcase Panel: Flat on left edge, rounded on BOTH top-right & bottom-right edges */}
+            <div className="lg:col-span-6 relative min-h-[340px] lg:h-screen bg-[#022c22] overflow-hidden rounded-bl-[2rem] rounded-br-[2rem] lg:rounded-tl-none lg:rounded-bl-none lg:rounded-tr-[2.75rem] lg:rounded-br-[2.75rem] shadow-2xl shadow-emerald-950/30 flex flex-col justify-between p-6 sm:p-8 lg:p-10 text-white z-10">
+                {/* Full-size smart-city hero image */}
+                <motion.img
+                    initial={{ opacity: 0, scale: 1.04 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.7, ease: [0.165, 0.84, 0.44, 1] }}
+                    src="/images/admin-login-hero.jpg"
+                    alt="EnviroLink Smart Municipal Operations"
+                    className="absolute inset-0 w-full h-full object-cover object-center"
+                />
+
+                {/* Top & bottom gradient scrims for legible text without hiding the centerpiece */}
+                <div className="absolute inset-0 bg-gradient-to-b from-[#022c22]/80 via-transparent to-[#022c22]/90 pointer-events-none" />
 
                 {/* Top Command Pill */}
                 <div className="relative z-10 flex items-center justify-between shrink-0">
-                    <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-emerald-300/25 text-[11px] sm:text-xs font-semibold tracking-wider text-emerald-50 shadow-sm">
+                    <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/30 backdrop-blur-md border border-emerald-300/25 text-[11px] sm:text-xs font-semibold tracking-wider text-emerald-50 shadow-sm">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                         ENVIROLINK · COMMAND CENTER
                     </span>
-                    <span className="hidden sm:inline-flex text-[11px] font-medium text-emerald-200/80 bg-white/5 px-3 py-1 rounded-full border border-white/10">
+                    <span className="hidden sm:inline-flex text-[11px] font-medium text-emerald-100 bg-black/25 backdrop-blur-md px-3 py-1 rounded-full border border-white/15">
                         v2.0 Live Ops
                     </span>
                 </div>
 
-                {/* Full Uncropped Illustration Centerpiece */}
-                <div className="relative z-10 flex-1 flex items-center justify-center my-4 min-h-[200px] lg:min-h-0">
-                    <motion.img
-                        initial={{ opacity: 0, scale: 0.94 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.55, ease: [0.165, 0.84, 0.44, 1] }}
-                        src="/images/admin-login-hero.jpg"
-                        alt="EnviroLink Smart Municipal Operations"
-                        className="max-h-[240px] sm:max-h-[300px] lg:max-h-[44vh] w-auto object-contain rounded-3xl shadow-2xl shadow-black/40 border border-emerald-400/20"
-                    />
-                </div>
-
-                {/* Bottom Title + 3 Side-by-Side Legends */}
-                <div className="relative z-10 shrink-0 space-y-4">
-                    <div>
-                        <h2 className="text-xl sm:text-2xl xl:text-3xl font-bold tracking-tight text-white">
-                            Smart Municipal Waste Governance
-                        </h2>
-                        <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 max-w-xl">
-                            Track live citizen reports, assign field crews, and audit AI-verified cleanups in real time.
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                        {PLATFORM_LEGENDS.map((item) => {
-                            const Icon = item.icon;
-                            return (
-                                <div
-                                    key={item.title}
-                                    className="p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/15 transition-colors"
-                                >
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <div className="w-7 h-7 rounded-lg bg-emerald-400/20 border border-emerald-300/30 flex items-center justify-center shrink-0">
-                                            <Icon size={14} className="text-emerald-300" />
-                                        </div>
-                                        <p className="text-xs font-bold text-white leading-tight">{item.title}</p>
-                                    </div>
-                                    <p className="text-[11px] text-emerald-100/80 leading-snug">{item.desc}</p>
-                                </div>
-                            );
-                        })}
-                    </div>
+                {/* Clean Bottom Title */}
+                <div className="relative z-10 shrink-0 max-w-lg">
+                    <h2 className="text-2xl sm:text-3xl xl:text-4xl font-bold tracking-tight text-white drop-shadow-sm">
+                        Smart Municipal Waste Governance
+                    </h2>
+                    <p className="text-xs sm:text-sm text-emerald-100/90 mt-2 leading-relaxed drop-shadow-sm">
+                        Centralized command portal for live citizen dispatches, crew assignments, and AI-verified field operations.
+                    </p>
                 </div>
             </div>
 

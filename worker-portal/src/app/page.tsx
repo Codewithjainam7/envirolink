@@ -881,35 +881,22 @@ export default function WorkerDashboard() {
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-2.5">
+                    <div className="space-y-2">
                       <button
                         type="button"
                         onClick={() => setShowWorkerCamera(true)}
-                        className={`w-full py-3 px-4 rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md transition ${
+                        className={`w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md transition ${
                           proofMode === 'nothing_found'
                             ? 'bg-gradient-to-r from-amber-500 to-orange-500'
                             : 'bg-gradient-to-r from-emerald-600 to-emerald-500'
                         }`}
                       >
                         <Camera size={18} />
-                        Open GeoTag Camera
+                        Open GeoTag Camera (Live Capture Only)
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => proofInputRef.current?.click()}
-                        className="w-full py-2.5 px-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition"
-                      >
-                        <Upload size={15} />
-                        Or Upload Photo / Gallery
-                      </button>
-                      <input
-                        ref={proofInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={handleProofUpload}
-                        className="hidden"
-                      />
+                      <p className="text-[11px] text-gray-400">
+                        Gallery uploads disabled to prevent fake or pre-saved photos.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -967,7 +954,6 @@ export default function WorkerDashboard() {
             setRawProofImage(rawDataUrl);
             setProofImage(stampedDataUrl);
           }}
-          onFallbackGallery={() => proofInputRef.current?.click()}
         />
       )}
     </div>

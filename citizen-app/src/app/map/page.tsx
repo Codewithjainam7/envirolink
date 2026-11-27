@@ -260,7 +260,13 @@ export default function MapPage() {
             <div className={`${viewMode === 'split' ? 'lg:grid lg:grid-cols-5' : ''}`}>
                 {/* Map Section - REAL MAP with Leaflet */}
                 {(viewMode === 'split' || viewMode === 'map') && (
-                    <div className={`relative ${viewMode === 'split' ? 'lg:col-span-3' : ''} h-[50vh] lg:h-[calc(100vh-220px)] sticky top-0 z-0`}>
+                    <div
+                        className={`relative w-full ${
+                            viewMode === 'split'
+                                ? 'lg:col-span-3 h-[50vh] lg:h-[calc(100vh-220px)] lg:sticky lg:top-20'
+                                : 'h-[62vh] lg:h-[calc(100vh-250px)] min-h-[420px]'
+                        } z-0`}
+                    >
                         <MapWrapper
                             reports={filteredReports}
                             onReportClick={(report) => setSelectedReport(report)}
@@ -268,6 +274,7 @@ export default function MapPage() {
                             tileStyle={tileStyle}
                             zoomCommand={zoomCommand}
                             userLocation={userLocation}
+                            layoutKey={viewMode}
                             className="w-full h-full"
                         />
 

@@ -29,6 +29,7 @@ interface MapWrapperProps {
     tileStyle?: 'street' | 'clean';
     zoomCommand?: { delta: number; seq: number } | null;
     userLocation?: { lat: number; lng: number; seq: number } | null;
+    layoutKey?: string;
 }
 
 export default function MapWrapper(props: MapWrapperProps) {

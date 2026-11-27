@@ -35,15 +35,48 @@ function MapController({
     selectedReportId,
     zoomCommand,
     userLocation,
+    layoutKey,
 }: {
     validReports: Report[];
     selectedReportId?: string;
     zoomCommand?: { delta: number; seq: number } | null;
     userLocation?: { lat: number; lng: number; seq: number } | null;
+    layoutKey?: string;
 }) {
     const map = useMap();
     const hasFittedRef = useRef(false);
     const lastReportSignatureRef = useRef('');
+
+    // Keep Leaflet synchronized whenever the container dimensions or layout mode change
+    useEffect(() => {
+        const container = map.getContainer();
+        const syncSize = () => {
+            try {
+                map.invalidateSize({ animate: false, pan: false });
+            } catch {
+                // Ignore if map is unmounting
+            }
+        };
+
+        const rafId = requestAnimationFrame(syncSize);
+        const timerId = window.setTimeout(syncSize, 150);
+
+        let observer: ResizeObserver | null = null;
+        if (typeof ResizeObserver !== 'undefined' && container) {
+            observer = new ResizeObserver(() => {
+                syncSize();
+            });
+            observer.observe(container);
+        }
+        window.addEventListener('resize', syncSize);
+
+        return () => {
+            cancelAnimationFrame(rafId);
+            window.clearTimeout(timerId);
+            observer?.disconnect();
+            window.removeEventListener('resize', syncSize);
+        };
+    }, [map, layoutKey]);
 
     // Auto-fit bounds whenever reports first arrive or change significantly
     useEffect(() => {
@@ -105,6 +138,7 @@ interface LeafletMapProps {
     tileStyle?: 'street' | 'clean';
     zoomCommand?: { delta: number; seq: number } | null;
     userLocation?: { lat: number; lng: number; seq: number } | null;
+    layoutKey?: string;
 }
 
 // Main component - must be dynamically imported with ssr: false
@@ -118,6 +152,7 @@ export default function LeafletMap({
     tileStyle = 'street',
     zoomCommand = null,
     userLocation = null,
+    layoutKey,
 }: LeafletMapProps) {
     const [mounted, setMounted] = useState(false);
 
@@ -151,7 +186,7 @@ export default function LeafletMap({
             center={center}
             zoom={zoom}
             className={`w-full h-full ${className}`}
-            style={{ background: '#e5e7eb' }}
+            style={{ background: '#e5e7eb', width: '100%', height: '100%' }}
             zoomControl={false}
         >
             {tileStyle === 'clean' ? (
@@ -171,6 +206,7 @@ export default function LeafletMap({
                 selectedReportId={selectedReportId}
                 zoomCommand={zoomCommand}
                 userLocation={userLocation}
+                layoutKey={layoutKey}
             />
 
             {/* User live GPS marker when located */}

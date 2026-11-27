@@ -562,37 +562,37 @@ export default function WorkerDashboard() {
   const displayName = worker?.first_name || user?.user_metadata?.first_name || 'Worker';
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white relative pb-20">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white relative pb-24 sm:pb-28">
       <FloatingBlobs />
 
       {/* Header */}
-      <header className="bg-gradient-to-r from-emerald-600 to-emerald-500 text-white p-6 pb-24 relative overflow-hidden rounded-b-[2.5rem] shadow-xl">
+      <header className="bg-gradient-to-r from-emerald-600 to-emerald-500 text-white p-4 sm:p-6 pb-20 sm:pb-24 relative overflow-hidden rounded-b-[2rem] sm:rounded-b-[2.5rem] shadow-xl">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
           <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full blur-2xl" />
         </div>
 
         <div className="max-w-7xl mx-auto relative z-10">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between mb-6 sm:mb-8 gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
               <motion.img
                 src="/images/envirolink-icon.png"
                 alt="ENVIROLINK"
-                className="w-10 h-10 object-contain"
+                className="w-9 h-9 sm:w-10 sm:h-10 object-contain shrink-0"
                 animate={{ rotate: [0, 5, -5, 0] }}
                 transition={{ duration: 4, repeat: Infinity }}
               />
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">Hello, {displayName}!</h1>
-                <p className="text-emerald-100 text-xs font-medium uppercase tracking-wider">{worker?.zone || 'Zone --'}</p>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">Hello, {displayName}!</h1>
+                <p className="text-emerald-100 text-[11px] sm:text-xs font-medium uppercase tracking-wider truncate">{worker?.zone || 'Zone --'}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <Link href="/notifications">
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  className="relative p-3 bg-white/20 backdrop-blur-md rounded-xl hover:bg-white/30 transition border border-white/10"
+                  className="relative p-2.5 sm:p-3 bg-white/20 backdrop-blur-md rounded-xl hover:bg-white/30 transition border border-white/10"
                 >
                   <Bell size={20} />
                   {tasks.filter(t => t.status === 'assigned').length > 0 && (
@@ -605,7 +605,7 @@ export default function WorkerDashboard() {
               <Link href="/profile">
                 <motion.div
                   whileHover={{ scale: 1.05 }}
-                  className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center font-bold text-lg border border-white/30 text-emerald-50 shadow-sm"
+                  className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center font-bold text-base sm:text-lg border border-white/30 text-emerald-50 shadow-sm"
                 >
                   {displayName[0]}
                 </motion.div>
@@ -614,7 +614,7 @@ export default function WorkerDashboard() {
           </div>
 
           {/* Quick Stats */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {[
               { value: tasks.length, label: 'Tasks Today', icon: ClipboardList },
               { value: tasksCompleted, label: 'Completed', icon: CheckCircle },
@@ -625,13 +625,13 @@ export default function WorkerDashboard() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.1 }}
-                className="bg-white/20 backdrop-blur-md rounded-2xl p-4 text-center border border-white/20 shadow-lg shadow-emerald-900/10"
+                className="bg-white/20 backdrop-blur-md rounded-2xl p-2.5 sm:p-4 text-center border border-white/20 shadow-lg shadow-emerald-900/10"
               >
-                <div className="flex items-center justify-center gap-1 mb-1">
-                  {stat.isStar && <Star size={18} className="text-yellow-300" fill="#fde047" />}
-                  <span className="text-3xl font-bold">{stat.value}</span>
+                <div className="flex items-center justify-center gap-1 mb-0.5 sm:mb-1">
+                  {stat.isStar && <Star size={16} className="text-yellow-300 shrink-0" fill="#fde047" />}
+                  <span className="text-2xl sm:text-3xl font-bold">{stat.value}</span>
                 </div>
-                <p className="text-xs text-emerald-100 font-medium uppercase tracking-wide">{stat.label}</p>
+                <p className="text-[10px] sm:text-xs text-emerald-100 font-medium uppercase tracking-wide truncate">{stat.label}</p>
               </motion.div>
             ))}
           </div>
@@ -688,7 +688,7 @@ export default function WorkerDashboard() {
             </span>
           </div>
 
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
             {tasks.map((task, i) => (
               <motion.div
                 key={task.id}
@@ -696,141 +696,143 @@ export default function WorkerDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.1 }}
                 whileHover={{ y: -4, boxShadow: '0 15px 30px -5px rgba(0,0,0,0.1)' }}
-                className="bg-white rounded-3xl shadow-sm p-5 border border-gray-100 hover:border-emerald-200 transition-all group"
+                className="bg-white rounded-3xl shadow-sm p-4 sm:p-5 border border-gray-100 hover:border-emerald-200 transition-all group flex flex-col justify-between"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${task.severity === 'critical' || task.severity === 'high' ? 'bg-red-50 text-red-600 border border-red-100' :
-                          task.severity === 'medium' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                            'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                        }`}>
-                        {task.severity || 'medium'} Priority
-                      </span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${task.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
-                        }`}>
-                        {task.status === 'in_progress' ? 'In Progress' : 'New'}
-                      </span>
+                <div>
+                  <div className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-2">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${task.severity === 'critical' || task.severity === 'high' ? 'bg-red-50 text-red-600 border border-red-100' :
+                            task.severity === 'medium' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                              'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                          }`}>
+                          {task.severity || 'medium'} Priority
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${task.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                          }`}>
+                          {task.status === 'in_progress' ? 'In Progress' : 'New'}
+                        </span>
+                      </div>
+                      <h3 className="text-base sm:text-lg font-bold text-gray-900 group-hover:text-emerald-700 transition-colors capitalize break-words">
+                        {task.category?.replace(/_/g, ' ') || 'Waste Report'}
+                      </h3>
                     </div>
-                    <h3 className="text-lg font-bold text-gray-900 group-hover:text-emerald-700 transition-colors">
-                      {task.category?.replace(/_/g, ' ') || 'Waste Report'}
-                    </h3>
-                  </div>
-                  <div className="text-right bg-emerald-50 px-3 py-2 rounded-xl">
-                    <p className="text-lg font-extrabold text-emerald-700">₹{getRewardForTask(task.severity)}</p>
-                    <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Reward</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 text-sm text-gray-500 mb-5 bg-gray-50 p-3 rounded-xl border border-gray-100">
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <MapPin size={16} className="text-emerald-500" />
-                    {task.locality || 'Unknown'}
-                  </span>
-                  <div className="w-px h-4 bg-gray-300" />
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <Clock size={16} className="text-emerald-500" />
-                    {formatTimeAgo(task.created_at)}
-                  </span>
-                </div>
-
-                <p className="text-gray-600 mb-4 flex items-center gap-2 text-sm pl-1">
-                  <Leaf size={16} className="text-emerald-400 shrink-0" />
-                  {task.address?.slice(0, 60) || task.locality || 'Location not specified'}
-                </p>
-
-                {/* Reported Task Photos */}
-                {task.images && task.images.length > 0 ? (
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
-                        <ImageIcon size={13} className="text-emerald-600" />
-                        Reported Site Photo{task.images.length > 1 ? `s (${task.images.length})` : ''}
-                      </span>
-                      <span className="text-[11px] font-medium text-emerald-600">Tap to enlarge</span>
+                    <div className="text-right bg-emerald-50 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl shrink-0">
+                      <p className="text-base sm:text-lg font-extrabold text-emerald-700">₹{getRewardForTask(task.severity)}</p>
+                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Reward</p>
                     </div>
-                    <div className={`grid gap-2 ${task.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                      {task.images.slice(0, 4).map((imgUrl, idx) => (
-                        <button
-                          key={`${task.id}-img-${idx}`}
-                          type="button"
-                          onClick={() =>
-                            setPreviewModal({
-                              images: task.images,
-                              index: idx,
-                              title: `${task.category?.replace(/_/g, ' ') || 'Waste Report'} · ${task.locality || task.address || ''}`,
-                            })
-                          }
-                          className={`relative w-full ${task.images.length === 1 ? 'h-48' : 'h-32'} rounded-2xl overflow-hidden bg-emerald-50 border border-gray-200 group/img text-left focus:outline-none focus:ring-2 focus:ring-emerald-400`}
-                        >
-                          <img
-                            src={imgUrl}
-                            alt={`Task photo ${idx + 1}`}
-                            loading="eager"
-                            decoding="async"
-                            onError={(e) => {
-                              const el = e.currentTarget;
-                              el.style.display = 'none';
-                              const fallback = el.nextElementSibling as HTMLElement | null;
-                              if (fallback) fallback.style.display = 'flex';
-                            }}
-                            className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
-                          />
-                          <div className="hidden w-full h-full items-center justify-center flex-col gap-1 text-xs text-gray-500 font-medium px-2 text-center">
-                            <ImageIcon size={20} className="text-gray-400" />
-                            <span>Unable to load photo</span>
-                          </div>
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover/img:opacity-100 transition-opacity flex items-end justify-between p-2.5">
-                            <span className="text-white text-[11px] font-semibold flex items-center gap-1">
-                              <ZoomIn size={13} />
-                              View Photo
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs sm:text-sm text-gray-500 mb-3.5 sm:mb-4 bg-gray-50 p-2.5 sm:p-3 rounded-xl border border-gray-100">
+                    <span className="flex items-center gap-1.5 font-medium min-w-0 truncate">
+                      <MapPin size={15} className="text-emerald-500 shrink-0" />
+                      <span className="truncate">{task.locality || 'Unknown'}</span>
+                    </span>
+                    <div className="hidden sm:block w-px h-4 bg-gray-300" />
+                    <span className="flex items-center gap-1.5 font-medium shrink-0">
+                      <Clock size={15} className="text-emerald-500 shrink-0" />
+                      {formatTimeAgo(task.created_at)}
+                    </span>
+                  </div>
+
+                  <p className="text-gray-600 mb-4 flex items-start gap-2 text-xs sm:text-sm pl-1 line-clamp-2">
+                    <Leaf size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+                    <span>{task.address || task.locality || 'Location not specified'}</span>
+                  </p>
+
+                  {/* Reported Task Photos */}
+                  {task.images && task.images.length > 0 ? (
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                          <ImageIcon size={13} className="text-emerald-600" />
+                          Reported Site Photo{task.images.length > 1 ? `s (${task.images.length})` : ''}
+                        </span>
+                        <span className="text-[11px] font-medium text-emerald-600">Tap to enlarge</span>
+                      </div>
+                      <div className={`grid gap-2 ${task.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                        {task.images.slice(0, 4).map((imgUrl, idx) => (
+                          <button
+                            key={`${task.id}-img-${idx}`}
+                            type="button"
+                            onClick={() =>
+                              setPreviewModal({
+                                images: task.images,
+                                index: idx,
+                                title: `${task.category?.replace(/_/g, ' ') || 'Waste Report'} · ${task.locality || task.address || ''}`,
+                              })
+                            }
+                            className={`relative w-full ${task.images.length === 1 ? 'aspect-[16/10]' : 'aspect-square sm:aspect-[4/3]'} rounded-2xl overflow-hidden bg-emerald-50 border border-gray-200 group/img text-left focus:outline-none focus:ring-2 focus:ring-emerald-400`}
+                          >
+                            <img
+                              src={imgUrl}
+                              alt={`Task photo ${idx + 1}`}
+                              loading="eager"
+                              decoding="async"
+                              onError={(e) => {
+                                const el = e.currentTarget;
+                                el.style.display = 'none';
+                                const fallback = el.nextElementSibling as HTMLElement | null;
+                                if (fallback) fallback.style.display = 'flex';
+                              }}
+                              className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                            />
+                            <div className="hidden w-full h-full items-center justify-center flex-col gap-1 text-xs text-gray-500 font-medium px-2 text-center">
+                              <ImageIcon size={20} className="text-gray-400" />
+                              <span>Unable to load photo</span>
+                            </div>
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover/img:opacity-100 transition-opacity flex items-end justify-between p-2.5">
+                              <span className="text-white text-[11px] font-semibold flex items-center gap-1">
+                                <ZoomIn size={13} />
+                                View Photo
+                              </span>
+                            </div>
+                            {idx === 3 && task.images.length > 4 && (
+                              <div className="absolute inset-0 bg-black/55 flex items-center justify-center text-white font-bold text-sm">
+                                +{task.images.length - 4} more
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mb-4 px-3 py-2 rounded-xl bg-gray-50 border border-dashed border-gray-200 text-xs text-gray-400 flex items-center gap-2">
+                      <ImageIcon size={14} className="shrink-0" />
+                      <span>No citizen photo attached to this report</span>
+                    </div>
+                  )}
+
+                  {/* Crew Team & Backup Request Badges */}
+                  {(() => {
+                    const crewCount = parseCrewIds(task.assigned_department_id, task.assigned_worker_id).length;
+                    const backupReq = parseBackupRequest(task.assigned_department_name);
+                    if (crewCount <= 1 && !backupReq) return null;
+                    return (
+                      <div className="mb-4 space-y-2">
+                        {crewCount > 1 && (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold">
+                            <Users size={14} className="text-emerald-600 shrink-0" />
+                            <span className="truncate">
+                              Crew of {crewCount}: {task.assigned_worker_name}
                             </span>
                           </div>
-                          {idx === 3 && task.images.length > 4 && (
-                            <div className="absolute inset-0 bg-black/55 flex items-center justify-center text-white font-bold text-sm">
-                              +{task.images.length - 4} more
-                            </div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mb-4 px-3 py-2 rounded-xl bg-gray-50 border border-dashed border-gray-200 text-xs text-gray-400 flex items-center gap-2">
-                    <ImageIcon size={14} className="shrink-0" />
-                    <span>No citizen photo attached to this report</span>
-                  </div>
-                )}
-
-                {/* Crew Team & Backup Request Badges */}
-                {(() => {
-                  const crewCount = parseCrewIds(task.assigned_department_id, task.assigned_worker_id).length;
-                  const backupReq = parseBackupRequest(task.assigned_department_name);
-                  if (crewCount <= 1 && !backupReq) return null;
-                  return (
-                    <div className="mb-4 space-y-2">
-                      {crewCount > 1 && (
-                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold">
-                          <Users size={14} className="text-emerald-600 shrink-0" />
-                          <span className="truncate">
-                            Crew of {crewCount}: {task.assigned_worker_name}
-                          </span>
-                        </div>
-                      )}
-                      {backupReq && (
-                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 font-semibold">
-                          <Users size={14} className="text-amber-600 shrink-0" />
-                          <span className="truncate">
-                            Backup Requested (+{backupReq.count} pending Admin): {backupReq.reason}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                        )}
+                        {backupReq && (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 font-semibold">
+                            <Users size={14} className="text-amber-600 shrink-0" />
+                            <span className="truncate">
+                              Backup Requested (+{backupReq.count} pending Admin): {backupReq.reason}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
 
                 {task.status === 'assigned' ? (
-                  <div className="mt-4 space-y-2.5">
+                  <div className="mt-2 space-y-2.5">
                     <ActionSlider
                       label="Slide to Accept Task"
                       completedLabel="Task Accepted!"
@@ -839,35 +841,35 @@ export default function WorkerDashboard() {
                         setTimeout(() => handleAcceptTask(task.id), 800);
                       }}
                     />
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => {
                           setBackupCount(2);
                           setBackupReason(BACKUP_REASONS[0]);
                           setShowBackupModal(task);
                         }}
-                        className="py-2 px-2 rounded-full border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold flex items-center justify-center gap-1 transition"
+                        className="flex-1 min-w-[96px] py-2 px-2.5 rounded-full border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold flex items-center justify-center gap-1 transition"
                       >
                         <Users size={12} />
                         Need Crew
                       </button>
                       <button
                         onClick={() => openProofModal(task, 'nothing_found')}
-                        className="py-2 px-2 rounded-full border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold flex items-center justify-center gap-1 transition"
+                        className="flex-1 min-w-[104px] py-2 px-2.5 rounded-full border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold flex items-center justify-center gap-1 transition"
                       >
                         <Flag size={12} />
                         Nothing Found
                       </button>
                       <button
                         onClick={() => handleRejectTask(task.id)}
-                        className="py-2 px-2 rounded-full border border-gray-200 text-[11px] text-gray-500 hover:text-red-600 hover:border-red-200 font-bold transition-colors"
+                        className="flex-1 min-w-[78px] py-2 px-2.5 rounded-full border border-gray-200 text-[11px] text-gray-500 hover:text-red-600 hover:border-red-200 font-bold transition-colors"
                       >
                         Decline
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-2.5 mt-4">
+                  <div className="space-y-2.5 mt-2">
                     <div className="flex gap-3">
                       <div className="flex-1">
                         <motion.button
@@ -941,7 +943,7 @@ export default function WorkerDashboard() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-3 sm:p-4"
             onClick={() => !verifying && setShowProofModal(null)}
           >
             <motion.div
@@ -949,7 +951,7 @@ export default function WorkerDashboard() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={e => e.stopPropagation()}
-              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl"
+              className="bg-white rounded-3xl p-4 sm:p-6 max-w-md w-full shadow-2xl max-h-[90dvh] overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -1173,7 +1175,7 @@ export default function WorkerDashboard() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-3 sm:p-4"
             onClick={() => !requestingBackup && setShowBackupModal(null)}
           >
             <motion.div
@@ -1181,7 +1183,7 @@ export default function WorkerDashboard() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl"
+              className="bg-white rounded-3xl p-4 sm:p-6 max-w-md w-full shadow-2xl max-h-[90dvh] overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -1298,15 +1300,15 @@ export default function WorkerDashboard() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setPreviewModal(null)}
-            className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4"
+            className="fixed inset-0 z-[70] bg-black/92 backdrop-blur-md flex flex-col items-center justify-center p-3 sm:p-6"
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-2xl flex flex-col items-center"
+              className="w-full max-w-3xl flex flex-col items-center"
             >
               <div className="w-full flex items-center justify-between text-white mb-3 gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-bold capitalize truncate">{previewModal.title}</p>
+                  <p className="text-sm sm:text-base font-bold capitalize truncate">{previewModal.title}</p>
                   {previewModal.images.length > 1 && (
                     <p className="text-xs text-white/70">
                       Photo {previewModal.index + 1} of {previewModal.images.length}
@@ -1316,7 +1318,7 @@ export default function WorkerDashboard() {
                 <button
                   type="button"
                   onClick={() => setPreviewModal(null)}
-                  className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white transition shrink-0"
+                  className="p-2.5 rounded-full bg-white/15 hover:bg-white/25 text-white transition shrink-0"
                   aria-label="Close photo preview"
                 >
                   <X size={20} />
@@ -1327,7 +1329,7 @@ export default function WorkerDashboard() {
                 <img
                   src={previewModal.images[previewModal.index]}
                   alt={`Task photo ${previewModal.index + 1}`}
-                  className="max-h-[75vh] w-auto max-w-full rounded-2xl object-contain shadow-2xl"
+                  className="max-h-[78dvh] w-auto max-w-full rounded-2xl object-contain shadow-2xl"
                 />
                 {previewModal.images.length > 1 && (
                   <>

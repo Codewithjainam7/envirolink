@@ -7,8 +7,8 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import {
   ClipboardList, MapPin, Clock, AlertTriangle, Flag,
-  User, Users, Wallet, Bell, Navigation, ChevronRight, Star, Leaf, CheckCircle,
-  Camera, X, Loader2, Upload
+  User, Users, Wallet, Bell, Navigation, ChevronRight, ChevronLeft, Star, Leaf, CheckCircle,
+  Camera, X, Loader2, Upload, Image as ImageIcon, ZoomIn
 } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
 import BottomNav from '@/components/BottomNav';
@@ -16,6 +16,7 @@ import ActionSlider from '@/components/ActionSlider';
 import GeoTagCameraModal from '@/components/GeoTagCameraModal';
 import { stampWorkerGeoTag } from '@/lib/geotag';
 import { parseCrewIds, parseBackupRequest, formatBackupDepartmentName } from '@/lib/crew';
+import { fetchReportImagesMap } from '@/lib/reportImages';
 
 const BACKUP_REASONS = [
   'Waste pile larger than expected for one person',
@@ -87,6 +88,7 @@ export default function WorkerDashboard() {
   const [backupCount, setBackupCount] = useState(2);
   const [backupReason, setBackupReason] = useState(BACKUP_REASONS[0]);
   const [requestingBackup, setRequestingBackup] = useState(false);
+  const [previewModal, setPreviewModal] = useState<{ images: string[]; index: number; title: string } | null>(null);
   const proofInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = createClient();
@@ -148,18 +150,7 @@ export default function WorkerDashboard() {
 
       // Batch fetch images for all assigned tasks in a single query
       const taskIds = (tasksData || []).map((t) => t.id);
-      const imagesByReport = new Map<string, string[]>();
-      if (taskIds.length > 0) {
-        const { data: imagesData } = await supabase
-          .from('report_images')
-          .select('report_id, url')
-          .in('report_id', taskIds);
-        (imagesData || []).forEach((img: any) => {
-          const arr = imagesByReport.get(img.report_id) || [];
-          arr.push(img.url);
-          imagesByReport.set(img.report_id, arr);
-        });
-      }
+      const imagesByReport = await fetchReportImagesMap(supabase, taskIds);
 
       const tasksWithImages = (tasksData || []).map((task) => ({
         ...task,
@@ -748,6 +739,69 @@ export default function WorkerDashboard() {
                   {task.address?.slice(0, 60) || task.locality || 'Location not specified'}
                 </p>
 
+                {/* Reported Task Photos */}
+                {task.images && task.images.length > 0 ? (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                        <ImageIcon size={13} className="text-emerald-600" />
+                        Reported Site Photo{task.images.length > 1 ? `s (${task.images.length})` : ''}
+                      </span>
+                      <span className="text-[11px] font-medium text-emerald-600">Tap to enlarge</span>
+                    </div>
+                    <div className={`grid gap-2 ${task.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                      {task.images.slice(0, 4).map((imgUrl, idx) => (
+                        <button
+                          key={`${task.id}-img-${idx}`}
+                          type="button"
+                          onClick={() =>
+                            setPreviewModal({
+                              images: task.images,
+                              index: idx,
+                              title: `${task.category?.replace(/_/g, ' ') || 'Waste Report'} · ${task.locality || task.address || ''}`,
+                            })
+                          }
+                          className={`relative w-full ${task.images.length === 1 ? 'h-48' : 'h-32'} rounded-2xl overflow-hidden bg-emerald-50 border border-gray-200 group/img text-left focus:outline-none focus:ring-2 focus:ring-emerald-400`}
+                        >
+                          <img
+                            src={imgUrl}
+                            alt={`Task photo ${idx + 1}`}
+                            loading="eager"
+                            decoding="async"
+                            onError={(e) => {
+                              const el = e.currentTarget;
+                              el.style.display = 'none';
+                              const fallback = el.nextElementSibling as HTMLElement | null;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
+                            className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                          />
+                          <div className="hidden w-full h-full items-center justify-center flex-col gap-1 text-xs text-gray-500 font-medium px-2 text-center">
+                            <ImageIcon size={20} className="text-gray-400" />
+                            <span>Unable to load photo</span>
+                          </div>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover/img:opacity-100 transition-opacity flex items-end justify-between p-2.5">
+                            <span className="text-white text-[11px] font-semibold flex items-center gap-1">
+                              <ZoomIn size={13} />
+                              View Photo
+                            </span>
+                          </div>
+                          {idx === 3 && task.images.length > 4 && (
+                            <div className="absolute inset-0 bg-black/55 flex items-center justify-center text-white font-bold text-sm">
+                              +{task.images.length - 4} more
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-4 px-3 py-2 rounded-xl bg-gray-50 border border-dashed border-gray-200 text-xs text-gray-400 flex items-center gap-2">
+                    <ImageIcon size={14} className="shrink-0" />
+                    <span>No citizen photo attached to this report</span>
+                  </div>
+                )}
+
                 {/* Crew Team & Backup Request Badges */}
                 {(() => {
                   const crewCount = parseCrewIds(task.assigned_department_id, task.assigned_worker_id).length;
@@ -992,6 +1046,33 @@ export default function WorkerDashboard() {
               )}
 
               <div className="mb-5">
+                {showProofModal.images && showProofModal.images.length > 0 && (
+                  <div className="mb-3 p-2.5 rounded-xl bg-gray-50 border border-gray-200 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewModal({
+                          images: showProofModal.images,
+                          index: 0,
+                          title: `Citizen Report Photo · ${showProofModal.locality || showProofModal.address || ''}`,
+                        })
+                      }
+                      className="w-14 h-14 rounded-lg overflow-hidden bg-emerald-50 border border-gray-200 shrink-0 relative group"
+                    >
+                      <img
+                        src={showProofModal.images[0]}
+                        alt="Reported site reference"
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-gray-700">Citizen Report Reference</p>
+                      <p className="text-[11px] text-gray-500 truncate">
+                        Tap thumbnail to view original photo ({showProofModal.images.length})
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <p className="text-sm text-gray-600 mb-3">
                   {proofMode === 'nothing_found'
                     ? 'Take/upload a photo of the empty spot. GeoTag + AI proof will submit this report with a worker flag.'
@@ -1208,6 +1289,89 @@ export default function WorkerDashboard() {
           onFallbackGallery={() => proofInputRef.current?.click()}
         />
       )}
+
+      {/* Fullscreen Photo Preview Lightbox */}
+      <AnimatePresence>
+        {previewModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setPreviewModal(null)}
+            className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-2xl flex flex-col items-center"
+            >
+              <div className="w-full flex items-center justify-between text-white mb-3 gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold capitalize truncate">{previewModal.title}</p>
+                  {previewModal.images.length > 1 && (
+                    <p className="text-xs text-white/70">
+                      Photo {previewModal.index + 1} of {previewModal.images.length}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewModal(null)}
+                  className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white transition shrink-0"
+                  aria-label="Close photo preview"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="relative w-full flex items-center justify-center">
+                <img
+                  src={previewModal.images[previewModal.index]}
+                  alt={`Task photo ${previewModal.index + 1}`}
+                  className="max-h-[75vh] w-auto max-w-full rounded-2xl object-contain shadow-2xl"
+                />
+                {previewModal.images.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewModal((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                index: (prev.index - 1 + prev.images.length) % prev.images.length,
+                              }
+                            : null
+                        )
+                      }
+                      className="absolute left-2 p-2.5 rounded-full bg-black/60 hover:bg-black/80 text-white transition"
+                      aria-label="Previous photo"
+                    >
+                      <ChevronLeft size={22} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewModal((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                index: (prev.index + 1) % prev.images.length,
+                              }
+                            : null
+                        )
+                      }
+                      className="absolute right-2 p-2.5 rounded-full bg-black/60 hover:bg-black/80 text-white transition"
+                      aria-label="Next photo"
+                    >
+                      <ChevronRight size={22} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

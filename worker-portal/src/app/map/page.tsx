@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Navigation, MapPin, Loader2, ArrowLeft } from 'lucide-react';
+import { Navigation, MapPin, Loader2, ArrowLeft, X, ZoomIn } from 'lucide-react';
 import FloatingBlobs from '@/components/FloatingBlobs';
 import BottomNav from '@/components/BottomNav';
 import { Report } from '@/types';
 import { createClient } from '@/lib/supabase';
+import { fetchReportImagesMap } from '@/lib/reportImages';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -20,6 +21,7 @@ const MapWrapper = dynamic(() => import('@/components/MapWrapper'), {
 export default function WorkerMapPage() {
     const [tasks, setTasks] = useState<Report[]>([]);
     const [selectedTask, setSelectedTask] = useState<Report | null>(null);
+    const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
     const supabase = createClient();
@@ -53,22 +55,30 @@ export default function WorkerMapPage() {
                 .or(`assigned_worker_id.eq.${workerData.id},assigned_department_id.ilike.%${workerData.id}%`)
                 .in('status', ['assigned', 'in_progress']);
 
-            const mappedTasks: Report[] = (tasksData || []).map(r => ({
-                id: r.id,
-                reportId: r.report_id,
-                location: {
-                    latitude: r.latitude,
-                    longitude: r.longitude,
-                    address: r.address || r.locality || 'Unknown location',
-                    locality: r.locality || 'Unknown',
-                    city: r.city || 'Mumbai'
-                },
-                category: r.category,
-                severity: r.severity,
-                status: r.status,
-                createdAt: r.created_at,
-                updatedAt: r.updated_at,
-            }));
+            const taskIds = (tasksData || []).map((r) => r.id);
+            const imagesByReport = await fetchReportImagesMap(supabase, taskIds);
+
+            const mappedTasks: Report[] = (tasksData || []).map(r => {
+                const taskImages = imagesByReport.get(r.id) || [];
+                return {
+                    id: r.id,
+                    reportId: r.report_id,
+                    location: {
+                        latitude: r.latitude,
+                        longitude: r.longitude,
+                        address: r.address || r.locality || 'Unknown location',
+                        locality: r.locality || 'Unknown',
+                        city: r.city || 'Mumbai'
+                    },
+                    category: r.category,
+                    severity: r.severity,
+                    status: r.status,
+                    imageUrl: taskImages[0],
+                    images: taskImages,
+                    createdAt: r.created_at,
+                    updatedAt: r.updated_at,
+                };
+            });
 
             setTasks(mappedTasks);
         } catch (error) {
@@ -158,6 +168,33 @@ export default function WorkerMapPage() {
                                 </div>
                             </div>
 
+                            {selectedTask.images && selectedTask.images.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setPreviewImageUrl(selectedTask.images![0])}
+                                    className="w-full h-36 mb-4 rounded-2xl overflow-hidden bg-emerald-50 border border-gray-200 relative group text-left"
+                                >
+                                    <img
+                                        src={selectedTask.images[0]}
+                                        alt="Assigned task photo"
+                                        loading="eager"
+                                        decoding="async"
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent flex items-end justify-between p-2.5">
+                                        <span className="text-white text-xs font-semibold flex items-center gap-1">
+                                            <ZoomIn size={14} />
+                                            Tap to enlarge reported photo
+                                        </span>
+                                        {selectedTask.images.length > 1 && (
+                                            <span className="px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">
+                                                +{selectedTask.images.length - 1} more
+                                            </span>
+                                        )}
+                                    </div>
+                                </button>
+                            )}
+
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => startNavigation(selectedTask)}
@@ -174,6 +211,33 @@ export default function WorkerMapPage() {
                                 </button>
                             </div>
                         </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {previewImageUrl && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setPreviewImageUrl(null)}
+                        className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+                    >
+                        <button
+                            type="button"
+                            onClick={() => setPreviewImageUrl(null)}
+                            className="absolute top-4 right-4 p-2 rounded-full bg-white/15 hover:bg-white/25 text-white"
+                            aria-label="Close photo preview"
+                        >
+                            <X size={22} />
+                        </button>
+                        <img
+                            src={previewImageUrl}
+                            alt="Assigned task photo preview"
+                            onClick={(e) => e.stopPropagation()}
+                            className="max-h-[80vh] max-w-full rounded-2xl object-contain"
+                        />
                     </motion.div>
                 )}
             </AnimatePresence>

@@ -15,6 +15,7 @@ export interface Report {
     status: string;
     description?: string;
     imageUrl?: string;
+    images?: string[];
     createdAt: string;
     updatedAt: string;
     assignedTo?: {
